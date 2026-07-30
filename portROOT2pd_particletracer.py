@@ -18,15 +18,66 @@ import constants
 #
 # The tree lives in the TFileService directory named after the analyzer module label
 # (see Offline/STMMC/fcl/ParticleTracer.fcl -> "particleTracer").
+#
+# Reading goes through RDataFrame.AsNumpy(), which pulls every branch in bulk in C++;
+# the per-entry GetEntry() loop this replaced was orders of magnitude slower. Same
+# idiom as nucap_MuBeamStopVD.ipynb.
+#
+# NOTE on ROOT.EnableImplicitMT(): with implicit MT on, AsNumpy() does not preserve
+# tree entry order. Nothing here depends on the order being the tree's (rows are
+# addressed by run/subRun/event/simId, and getGenealogy() reorders the chain itself),
+# but the 'entry' column is then a row counter rather than the TTree entry number.
+# The reads are IO bound anyway, so MT buys little; leave it off if you want 'entry'
+# to mean the TTree entry number.
+
+# vector<double>/vector<int> branches: one array per entry
+VECTOR_COLUMNS = {
+    'x' : float, 'y' : float, 'z' : float,      # mm
+    't' : float,                                # ns
+    'kE': float, 'E' : float,                   # MeV
+    'ancestorSimIds': int, 'ancestorPdgIds': int,
+}
+
+SCALAR_COLUMNS = [
+    'run', 'subRun', 'event', 'simId', 'pdgId',
+    'matched',        # True: seeded StepPointMC particle
+    'hasTrajectory',  # False: start/end positions only
+    'nPoints',
+    'startPx', 'startPy', 'startPz', 'startP',  # MeV/c
+    'endPx', 'endPy', 'endPz', 'endP',
+    'parentSimId',    # -1 if primary/unavailable
+    'parentPdgId', 'creationCode', 'isPrimary',
+]
+
+COLUMNS = SCALAR_COLUMNS + list(VECTOR_COLUMNS)
+
+
+def _materialize_vectors(df_):
+    """Turn the RVec proxies AsNumpy hands back into plain owned numpy arrays.
+
+    AsNumpy returns a vector branch as an object array of ROOT RVec objects. Those are
+    thin views over memory RDataFrame owns, so they are converted (and copied) here --
+    otherwise the DataFrame outlives the buffers and cannot be pickled.
+    """
+    for col, dtype in VECTOR_COLUMNS.items():
+        if col in df_.columns:
+            df_[col] = df_[col].apply(lambda v, d=dtype: np.array(v, dtype=d, copy=True))
+    return df_
+
 
 def PortToDF(geometry, tag, fileList, verbose = False, treedir = "particleTracer",
-             treename = "ttree", weighted = True):
+             treename = "ttree", weighted = True, columns = None):
     """Return one DataFrame with a row per TTree entry (one SimParticle trajectory).
 
     Point branches are kept as numpy arrays in the columns x, y, z, t, kE, E so a
     whole trajectory can be plotted from a single row.
+
+    columns: branches to read; defaults to COLUMNS. Narrowing it speeds the read up
+    further -- but the drop the notebook cares about is the point vectors, which the
+    displays need.
     """
-    df_traj = pd.DataFrame()
+    if columns is None:
+        columns = COLUMNS
 
     weight = 1.
     if weighted:
@@ -36,75 +87,47 @@ def PortToDF(geometry, tag, fileList, verbose = False, treedir = "particleTracer
         except KeyError:
             print("WARNING: no POT bookkeeping for geometry '%s' tag '%s'; weight set to 1."%(geometry, tag))
 
-    rows = []
+    treepath = treedir + "/" + treename
+    frames = []
     for ii, filename in enumerate(fileList):
         if verbose:
             print("Opening "+filename)
 
-        fFile = ROOT.TFile(filename, "READ")
-        fDir  = fFile.GetDirectory(treedir)
-        if not fDir:
-            print("WARNING: directory '%s' not found in %s; skipping."%(treedir, filename))
-            fFile.Close()
-            continue
-        fTree = fDir.Get(treename)
+        rdf_ = ROOT.RDataFrame(treepath, filename)
 
-        nEntry = fTree.GetEntries()
+        # only ask for branches the file actually has, so a tree written by an older
+        # version of the module still reads
+        available = set(str(c) for c in rdf_.GetColumnNames())
+        missing = [c for c in columns if c not in available]
+        if missing:
+            print("WARNING: %s has no branch(es) %s; skipping those."%(filename, missing))
+        usecols = [c for c in columns if c in available]
+
+        df_ = pd.DataFrame(rdf_.AsNumpy(columns=usecols))
         if verbose:
-            print(nEntry, " trajectory entries are found")
+            print(len(df_), " trajectory entries are found")
 
-        for i in range(nEntry):
-            fTree.GetEntry(i)
+        df_ = _materialize_vectors(df_)
+        df_.insert(0, 'tag', tag)      # Ele, Mu, 1809, Neutrals
+        df_.insert(1, 'fileno', ii)
+        df_.insert(2, 'entry', np.arange(len(df_)))
+        df_['weight'] = weight
 
-            rows.append({
-                'tag'          : tag,          # Ele, Mu, 1809, Neutrals
-                'fileno'       : ii,
-                'entry'        : i,
-                'run'          : int(fTree.run),
-                'subRun'       : int(fTree.subRun),
-                'event'        : int(fTree.event),
-                'simId'        : int(fTree.simId),
-                'pdgId'        : int(fTree.pdgId),
-                'matched'      : bool(fTree.matched),        # True: seeded StepPointMC particle
-                'hasTrajectory': bool(fTree.hasTrajectory),  # False: start/end positions only
-                'nPoints'      : int(fTree.nPoints),
-                # copy=True: the vector branches are backed by a buffer ROOT reuses on the
-                # next GetEntry, so the row must own its own points
-                'x'            : np.array(fTree.x, dtype=float, copy=True),   # mm
-                'y'            : np.array(fTree.y, dtype=float, copy=True),   # mm
-                'z'            : np.array(fTree.z, dtype=float, copy=True),   # mm
-                't'            : np.array(fTree.t, dtype=float, copy=True),   # ns
-                'kE'           : np.array(fTree.kE, dtype=float, copy=True),  # MeV
-                'E'            : np.array(fTree.E, dtype=float, copy=True),   # MeV
-                'startPx'      : fTree.startPx,   # MeV/c
-                'startPy'      : fTree.startPy,
-                'startPz'      : fTree.startPz,
-                'startP'       : fTree.startP,
-                'endPx'        : fTree.endPx,
-                'endPy'        : fTree.endPy,
-                'endPz'        : fTree.endPz,
-                'endP'         : fTree.endP,
-                'parentSimId'  : int(fTree.parentSimId),  # -1 if primary/unavailable
-                'parentPdgId'  : int(fTree.parentPdgId),
-                'creationCode' : int(fTree.creationCode),
-                'isPrimary'    : bool(fTree.isPrimary),
-                'ancestorSimIds': np.array(fTree.ancestorSimIds, dtype=int, copy=True), # parent-first, primary last
-                'ancestorPdgIds': np.array(fTree.ancestorPdgIds, dtype=int, copy=True),
-                'weight'       : weight,
-            })
-            if len(rows)%50000==1 and verbose:
-                print(len(rows), " trajectory entries are collected")
+        frames.append(df_)
 
-        fFile.Close()
+    if not frames:
+        return pd.DataFrame()
 
-    df_traj = pd.DataFrame(rows)
+    df_traj = pd.concat(frames, ignore_index=True)
+    if verbose:
+        print(len(df_traj), " trajectory entries are collected")
 
     # Convenience scalars derived from the point vectors (first/last point of the entry).
-    if len(df_traj):
-        for col, src, idx in [('startx','x',0), ('starty','y',0), ('startz','z',0),
-                              ('starttime','t',0), ('startkE','kE',0),
-                              ('endx','x',-1), ('endy','y',-1), ('endz','z',-1),
-                              ('endtime','t',-1), ('endkE','kE',-1)]:
+    for col, src, idx in [('startx','x',0), ('starty','y',0), ('startz','z',0),
+                          ('starttime','t',0), ('startkE','kE',0),
+                          ('endx','x',-1), ('endy','y',-1), ('endz','z',-1),
+                          ('endtime','t',-1), ('endkE','kE',-1)]:
+        if src in df_traj.columns:
             df_traj[col] = df_traj[src].apply(lambda v, k=idx: v[k] if len(v) else np.nan)
 
     return df_traj
