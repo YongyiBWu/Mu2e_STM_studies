@@ -529,3 +529,69 @@ def draw_particle_source_all(df_source, title):
     fig.suptitle(title, y=0.93)
 
     return fig, ax_top, ax_side
+
+def draw_particle_tracer_event(dfe_, title = None, markstart = True):
+    # Event display for the TTree written by Offline/STMMC/src/ParticleTracer_module.cc,
+    # read in by portROOT2pd_particletracer.PortToDF. dfe_ holds every trajectory entry of
+    # one art event (one row per SimParticle): the seeded StepPointMC particles
+    # (matched==True) and all of their ancestors up to the primary.
+    #
+    # Solid line: entry with a stored MCTrajectory (hasTrajectory==True), drawn through
+    #             all of its points.
+    # Dashed line: entry with no stored MCTrajectory (hasTrajectory==False), so only the
+    #             SimParticle start and end positions are available.
+    fig = plt.figure(figsize=(15, 6))
+    gs = GridSpec(5, 1, figure=fig,
+                  wspace=0.05, hspace=0.00)
+
+    ax_top  = fig.add_subplot(gs[0:3]) # top view
+    ax_side = fig.add_subplot(gs[3:], sharex=ax_top) # side view
+
+    source_id = []
+    legend_handles = []
+
+    for ii in range(len(dfe_)):
+        this_entry = dfe_.iloc[ii]
+        this_pdgid = this_entry['pdgId']
+        try:
+            this_color = pdgid.pdgid_color_dict[this_pdgid]
+        except:
+            this_color = 'yellow'
+        # solid for a real trajectory, dashed for start/end positions only
+        this_style = '-' if this_entry['hasTrajectory'] else '--'
+
+        if not this_pdgid in source_id:
+            source_id.append(this_pdgid)
+            try:
+                this_label = pdgid.pdgid_dict[this_pdgid]
+            except:
+                this_label = str(int(this_pdgid))
+            legend_dummy = Line2D([0], [0], linewidth=2, linestyle='-', color=this_color,
+                                  markerfacecolor=this_color, markersize=0, label=this_label)
+            legend_handles.append(legend_dummy)
+
+        x, y, z = this_entry['x'], this_entry['y'], this_entry['z']
+        # a matched (seed) particle gets a thicker line than its ancestors
+        this_width = 2 if this_entry['matched'] else 1.2
+
+        ax_top.add_line(Line2D(z, x, linewidth=this_width, linestyle=this_style, color=this_color))
+        ax_side.add_line(Line2D(z, y, linewidth=this_width, linestyle=this_style, color=this_color))
+        if markstart and len(z):
+            ax_top.scatter(z[0], x[0], c=this_color, s=5)
+            ax_side.scatter(z[0], y[0], c=this_color, s=5)
+
+    # explain the two line styles alongside the particle colours
+    legend_handles.append(Line2D([0], [0], linewidth=2, linestyle='-', color='grey',
+                                 label='MCTrajectory'))
+    legend_handles.append(Line2D([0], [0], linewidth=2, linestyle='--', color='grey',
+                                 label='start/end only'))
+
+    ax_top.legend(handles=legend_handles, loc="center left", bbox_to_anchor=(1.02, 0.5))
+
+    draw_Mu2e_topview(ax_top)
+    draw_Mu2e_sideview(ax_side)
+
+    if title is not None:
+        fig.suptitle(title, y=0.93)
+
+    return fig, ax_top, ax_side
