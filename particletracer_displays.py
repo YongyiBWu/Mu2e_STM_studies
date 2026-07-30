@@ -110,6 +110,27 @@ def load(geometry, tags, verbose=True):
     return df_traj
 
 
+def print_z(seed_, perline=8):
+    """Print the distinct z values of the matched particle's own trajectory.
+
+    These are the points drawn for the thick line on its display: the full MCTrajectory
+    when hasTrajectory is True, otherwise just the SimParticle start and end z. Repeated
+    z values are collapsed (a particle can sit at one z over many points), so this shows
+    where it actually went rather than every stored point.
+    """
+    z = np.asarray(seed_['z'], dtype=float)
+    # drop consecutive repeats, keeping the order the trajectory was walked in
+    uniq = z[np.insert(z[1:] != z[:-1], 0, True)] if len(z) else z
+    print("  z [mm]: %i point%s -> %i distinct (%s)"
+          % (len(z), "" if len(z) == 1 else "s", len(uniq),
+             "MCTrajectory" if seed_['hasTrajectory'] else "start/end only"))
+    for ii in range(0, len(uniq), perline):
+        print("    " + "  ".join("%12.3f" % v for v in uniq[ii:ii+perline]))
+    if len(z):
+        print("    first %.3f  last %.3f  min %.3f  max %.3f"
+              % (z[0], z[-1], z.min(), z.max()))
+
+
 def summarize(df_traj):
     """Print the counts the notebook's summary cell displayed."""
     print("entries:              ", len(df_traj))
@@ -119,6 +140,21 @@ def summarize(df_traj):
     print("ancestors:            ", int((~df_traj['matched']).sum()))
     print("pdgIds present:       ", np.sort(df_traj['pdgId'].unique()))
     print("art events:           ", len(portROOT2pd_particletracer.getEventList(df_traj)))
+
+    # z of the particles that actually reached the VD (not their ancestors)
+    matched = portROOT2pd_particletracer.getMatched(df_traj)
+    print("===== z of matched (VD) particles =====")
+    for ii in range(len(matched)):
+        seed_ = matched.iloc[ii]
+        try:
+            name = pdgid_dict[seed_['pdgId']]
+        except KeyError:
+            name = str(int(seed_['pdgId']))
+        print("[%s] simId %i  %s  run %i subRun %i event %i"
+              % (str(seed_['tag']), seed_['simId'], name,
+                 seed_['run'], seed_['subRun'], seed_['event']))
+        print_z(seed_)
+    print("=======================================")
 
 
 def summarize_matched(sel):
@@ -139,27 +175,6 @@ def summarize_matched(sel):
             print("      %11i %-10s %6i" % (pdg, name, counts[pdg]))
     print("  %-12s %6i" % ("TOTAL", len(sel)))
     print("=====================================")
-
-
-def print_z(seed_, perline=8):
-    """Print the distinct z values of the matched particle's own trajectory.
-
-    These are the points drawn for the thick line on its display: the full MCTrajectory
-    when hasTrajectory is True, otherwise just the SimParticle start and end z. Repeated
-    z values are collapsed (a particle can sit at one z over many points), so this shows
-    where it actually went rather than every stored point.
-    """
-    z = np.asarray(seed_['z'], dtype=float)
-    # drop consecutive repeats, keeping the order the trajectory was walked in
-    uniq = z[np.insert(z[1:] != z[:-1], 0, True)] if len(z) else z
-    print("  z [mm]: %i point%s -> %i distinct (%s)"
-          % (len(z), "" if len(z) == 1 else "s", len(uniq),
-             "MCTrajectory" if seed_['hasTrajectory'] else "start/end only"))
-    for ii in range(0, len(uniq), perline):
-        print("    " + "  ".join("%12.3f" % v for v in uniq[ii:ii+perline]))
-    if len(z):
-        print("    first %.3f  last %.3f  min %.3f  max %.3f"
-              % (z[0], z[-1], z.min(), z.max()))
 
 
 def select(df_traj, tags=None, pdgids=None, positive_pz=False, pz_field='endPz'):
@@ -200,7 +215,6 @@ def draw(df_traj, sel, pdfname, nshow=-1, stride=1, print_chains=False):
             title = chain_title(seed_, len(dfc_))
             print('------------------------------------------------------------------------------')
             print(title)
-            print_z(seed_)
             if print_chains:
                 print(dfc_[chaincols].to_string())
             fig, ax_top, ax_side = plot_utils.draw_particle_tracer_event(dfc_, title)
