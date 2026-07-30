@@ -133,11 +133,16 @@ def print_z(seed_, perline=8):
 
 def summarize(df_traj):
     """Print the counts the notebook's summary cell displayed."""
-    print("entries:              ", len(df_traj))
-    print("with MCTrajectory:    ", int(df_traj['hasTrajectory'].sum()), "(solid)")
-    print("start/end only:       ", int((~df_traj['hasTrajectory']).sum()), "(dashed)")
-    print("matched (VD) parts:   ", int(df_traj['matched'].sum()))
-    print("ancestors:            ", int((~df_traj['matched']).sum()))
+    # count the True rows and subtract, so the pair always sums to len(df_traj) even if
+    # the column arrives as something other than a real bool
+    nentries = len(df_traj)
+    ntraj = int(df_traj['hasTrajectory'].astype(bool).sum())
+    nmatched = int(df_traj['matched'].astype(bool).sum())
+    print("entries:              ", nentries)
+    print("with MCTrajectory:    ", ntraj, "(solid)")
+    print("start/end only:       ", nentries - ntraj, "(dashed)")
+    print("matched (VD) parts:   ", nmatched)
+    print("ancestors:            ", nentries - nmatched)
     print("pdgIds present:       ", np.sort(df_traj['pdgId'].unique()))
     print("art events:           ", len(portROOT2pd_particletracer.getEventList(df_traj)))
 

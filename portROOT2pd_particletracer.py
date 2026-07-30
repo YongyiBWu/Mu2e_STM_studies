@@ -38,16 +38,23 @@ VECTOR_COLUMNS = {
     'ancestorSimIds': int, 'ancestorPdgIds': int,
 }
 
-SCALAR_COLUMNS = [
-    'run', 'subRun', 'event', 'simId', 'pdgId',
+# bool branches (/O in the module). AsNumpy can hand these back as an integer or object
+# dtype rather than numpy bool; they are cast on read so that ~col negates instead of
+# doing a bitwise NOT (~1 == -2, which silently corrupts any count built from it).
+BOOL_COLUMNS = [
     'matched',        # True: seeded StepPointMC particle
     'hasTrajectory',  # False: start/end positions only
+    'isPrimary',
+]
+
+SCALAR_COLUMNS = [
+    'run', 'subRun', 'event', 'simId', 'pdgId',
     'nPoints',
     'startPx', 'startPy', 'startPz', 'startP',  # MeV/c
     'endPx', 'endPy', 'endPz', 'endP',
     'parentSimId',    # -1 if primary/unavailable
-    'parentPdgId', 'creationCode', 'isPrimary',
-]
+    'parentPdgId', 'creationCode',
+] + BOOL_COLUMNS
 
 COLUMNS = SCALAR_COLUMNS + list(VECTOR_COLUMNS)
 
@@ -62,6 +69,19 @@ def _materialize_vectors(df_):
     for col, dtype in VECTOR_COLUMNS.items():
         if col in df_.columns:
             df_[col] = df_[col].apply(lambda v, d=dtype: np.array(v, dtype=d, copy=True))
+    return df_
+
+
+def _materialize_bools(df_):
+    """Cast the /O branches to real numpy bool.
+
+    AsNumpy may return them as int8/uint8 (or object), where ~col is a bitwise NOT
+    rather than a logical negation -- ~1 == -2, so a count like (~col).sum() comes out
+    negative and wrong instead of counting the False rows.
+    """
+    for col in BOOL_COLUMNS:
+        if col in df_.columns:
+            df_[col] = df_[col].astype(bool)
     return df_
 
 
@@ -108,6 +128,7 @@ def PortToDF(geometry, tag, fileList, verbose = False, treedir = "particleTracer
             print(len(df_), " trajectory entries are found")
 
         df_ = _materialize_vectors(df_)
+        df_ = _materialize_bools(df_)
         df_.insert(0, 'tag', tag)      # Ele, Mu, 1809, Neutrals
         df_.insert(1, 'fileno', ii)
         df_.insert(2, 'entry', np.arange(len(df_)))
