@@ -44,14 +44,22 @@ from __future__ import print_function
 import sys
 import argparse
 
+# ROOT first, and in batch mode. PyROOT installs its own signal handler and does a lot
+# of work at import; importing it after matplotlib/pandas in some conda stacks has been
+# seen to segfault inside the Python GC during a later import. gROOT.SetBatch also stops
+# it from trying to open a display.
+import ROOT
+ROOT.PyConfig.IgnoreCommandLineOptions = True   # keep ROOT off our argv
+ROOT.PyConfig.DisableRootLogon = True
+ROOT.gROOT.SetBatch(True)
+from ROOT import gROOT, gStyle, gDirectory, gPad
+
 import numpy as np
+import pandas as pd
 import matplotlib
 matplotlib.use("Agg")   # no interactive display; must precede the pyplot import
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-
-import ROOT
-from ROOT import gROOT, gStyle, gDirectory, gPad
 
 import filepath
 import portROOT2pd_particletracer
