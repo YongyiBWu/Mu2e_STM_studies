@@ -119,3 +119,24 @@ def getEvent(df_traj, tag, fileno, run, subRun, event):
     """All trajectory entries belonging to one art event."""
     return df_traj.query("tag==@tag and fileno==@fileno and run==@run and "
                          "subRun==@subRun and event==@event").reset_index(drop=True)
+
+
+def getMatched(df_traj):
+    """The seeded particles: one row per StepPointMC particle that passed the PDG filter."""
+    return df_traj.query("matched == True").reset_index(drop=True)
+
+
+def getGenealogy(df_traj, seed_):
+    """Walk from one matched (VD) particle back through its genealogy to the primary.
+
+    seed_ is a single row of getMatched(df_traj). Returns the entries of the seed's own
+    art event that lie on its ancestor chain, ordered seed first then parent, grandparent,
+    ... , primary last -- i.e. the order ancestorSimIds is written in. Ancestors whose
+    entry is missing are skipped (the module writes an entry for every ancestor it walks,
+    so this only bites if the DataFrame was filtered).
+    """
+    dfe_ = getEvent(df_traj, seed_['tag'], seed_['fileno'],
+                    seed_['run'], seed_['subRun'], seed_['event'])
+    chain = [seed_['simId']] + list(seed_['ancestorSimIds'])
+    present = set(dfe_['simId'])
+    return dfe_.set_index('simId').loc[[s for s in chain if s in present]].reset_index()

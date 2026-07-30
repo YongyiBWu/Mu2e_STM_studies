@@ -532,9 +532,10 @@ def draw_particle_source_all(df_source, title):
 
 def draw_particle_tracer_event(dfe_, title = None, markstart = True):
     # Event display for the TTree written by Offline/STMMC/src/ParticleTracer_module.cc,
-    # read in by portROOT2pd_particletracer.PortToDF. dfe_ holds every trajectory entry of
-    # one art event (one row per SimParticle): the seeded StepPointMC particles
-    # (matched==True) and all of their ancestors up to the primary.
+    # read in by portROOT2pd_particletracer.PortToDF. dfe_ holds the trajectory entries to
+    # draw, one row per SimParticle -- normally one matched (VD) particle plus its
+    # genealogy chain back to the primary, as returned by
+    # portROOT2pd_particletracer.getGenealogy.
     #
     # Solid line: entry with a stored MCTrajectory (hasTrajectory==True), drawn through
     #             all of its points.
@@ -571,7 +572,7 @@ def draw_particle_tracer_event(dfe_, title = None, markstart = True):
             legend_handles.append(legend_dummy)
 
         x, y, z = this_entry['x'], this_entry['y'], this_entry['z']
-        # a matched (seed) particle gets a thicker line than its ancestors
+        # the matched (VD) particle gets a thicker line than its ancestors
         this_width = 2 if this_entry['matched'] else 1.2
 
         ax_top.add_line(Line2D(z, x, linewidth=this_width, linestyle=this_style, color=this_color))
