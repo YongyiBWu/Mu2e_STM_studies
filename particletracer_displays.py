@@ -44,13 +44,10 @@ from __future__ import print_function
 import sys
 import argparse
 
-# ROOT first, and in batch mode. PyROOT installs its own signal handler and does a lot
-# of work at import; importing it after matplotlib/pandas in some conda stacks has been
-# seen to segfault inside the Python GC during a later import. gROOT.SetBatch also stops
-# it from trying to open a display.
+# ROOT first and in batch mode: IgnoreCommandLineOptions keeps PyROOT from parsing our
+# own argv (this script takes --nshow etc.), and SetBatch stops it opening a display.
 import ROOT
-ROOT.PyConfig.IgnoreCommandLineOptions = True   # keep ROOT off our argv
-ROOT.PyConfig.DisableRootLogon = True
+ROOT.PyConfig.IgnoreCommandLineOptions = True
 ROOT.gROOT.SetBatch(True)
 from ROOT import gROOT, gStyle, gDirectory, gPad
 

@@ -9,7 +9,6 @@ from matplotlib.patches import Circle
 from matplotlib.patches import Rectangle
 from matplotlib.lines import Line2D
 from array import array
-from scipy import stats
 
 import constants
 import pdgid
