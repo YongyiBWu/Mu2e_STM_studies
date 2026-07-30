@@ -1,0 +1,531 @@
+from __future__ import print_function
+import sys, os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.gridspec import GridSpec
+from matplotlib.patches import Circle
+from matplotlib.patches import Rectangle
+from matplotlib.lines import Line2D
+from array import array
+from scipy import stats
+
+import constants
+import pdgid
+
+def single_hist(df, item, title, rangemin = None, rangemax = None, stepsize = None): 
+    # df of a particle from a tag
+    # item = ['time', 'x', 'y', 'E', 'r']
+    # title[0]: title, title[1]: xtitle, title[2]: ytitle
+
+    fig, ax = plt.subplots(figsize=(4,3))
+
+    if rangemin is None:
+        if item in ['x','y']:
+            rangemin = -110.
+        elif item in ['time','E','r']:
+            rangemin = 0.
+        elif item == 'pz':
+            rangemin = -50.
+        elif item == 'startz':
+            rangemin = 3000.
+        else:
+            rangemin = np.min(df[item])
+    if rangemax is None:
+        if item in ['x','y','r']:
+            rangemax = 110.
+        elif item == 'E':
+            #rangemax = 2000.
+            rangemax = 10000.
+        elif item == 'time':
+            rangemax = 5000.
+        elif item == 'pz':
+            rangemax = 20000.
+        elif item == 'startz':
+            rangemax = 7000.    
+        else:
+            rangemax = np.max(df[item])
+    if stepsize is None:
+        if item in ['x','y']:
+            stepsize = 5.
+        elif item == 'r':
+            stepsize = 2.5
+        elif item == 'E':
+            stepsize = 50.
+        elif item == 'time':
+            stepsize = 50.
+        elif item == 'pz':
+            stepsize = 50.
+        elif item == 'startz':
+            stepsize = 40.
+        else:
+            stepsize = (rangemax-rangemin)/50.
+    nbins = int((rangemax-rangemin)/stepsize)
+    bins = [float(rangemin)+stepsize*float(i) for i in range(nbins+1)]
+    
+    ax.hist(df[item], bins, histtype='step')
+    ax.set_title(title[0])
+    ax.set_xlabel(title[1])
+    ax.set_ylabel(title[2])
+
+    entries = len(df[item])
+    mean = np.mean(df[item])
+    std = np.std(df[item])
+    underflow = (df[item] < rangemin).sum()
+    overflow  = (df[item] > rangemax).sum()
+    textstr = (
+        f"Entries:   {entries}\n"
+        f"Mean:      {mean:.3f}\n"
+        f"Std Dev:   {std:.3f}\n"
+        f"Underflow: {underflow}\n"
+        f"Overflow:  {overflow}"
+    )
+    ax.text(
+        1.5, 0.97, textstr,
+        transform=ax.transAxes,
+        fontsize=10,
+        va='top', ha='right',
+        bbox=dict(facecolor='white', edgecolor='black', alpha=0.8)
+    )
+
+    return fig, ax
+    
+def draw_stm_projection(ax):
+    circles = [
+        ((0., constants.VD101_Y), constants.VD101_R),     # (center), radius
+        ((constants.hole1_X, constants.hole1_Y), constants.hole1_R),
+        ((constants.hole1_X, constants.hole1_Y), constants.hole1_r),
+        ((constants.hole2_X, constants.hole2_Y), constants.hole2_R),
+        ((constants.hole2_X, constants.hole2_Y), constants.hole2_r)
+    ]
+    for center, radius in circles:
+        cx, cy = center
+        circ = Circle((cx, cy), radius,
+                      edgecolor='cyan',
+                      facecolor='none',
+                      linewidth=1)
+        ax.add_patch(circ)
+    ax.set_aspect('equal')
+    return
+
+def particle_space_dist(df, title, forcemax = None):
+    # xbins = np.linspace(-110., 110., 45)
+    xbins = np.linspace(-510.+constants.VD101_X, 510.+constants.VD101_X, 103)
+    # ybins = np.linspace(-110., 110., 45)
+    ybins = np.linspace(-510., 510., 103)
+        
+    fig = plt.figure(figsize=(10, 8))
+    gs = GridSpec(8, 10, figure=fig,
+                  wspace=0.05, hspace=0.05) 
+    
+    ax2d = fig.add_subplot(gs[2:8, 2:8]) # 2D heatmap in bottom-left
+    axX = fig.add_subplot(gs[0:2, 2:8], sharex=ax2d) # x projection on top
+    axY = fig.add_subplot(gs[2:8, 8:10], sharey=ax2d) # y projection on right
+    cax = fig.add_subplot(gs[2:8, 0])   # colorbar in its own slot
+
+    H, xe, ye = np.histogram2d(
+        df["x"], df["y"],
+        #df["x"]-constants.VD101_X, df["y"],
+        bins=[xbins, ybins],
+        weights=df["weight"]
+    )
+    mesh = ax2d.pcolormesh(xbins, ybins, H.T, cmap="inferno", vmax=forcemax)
+    
+    fig.colorbar(mesh, cax=cax, label="Weighted counts", location="left", pad=0.2, orientation='vertical')
+
+    axX.hist(df["x"], bins=xbins, color="black", histtype='step', weights=df["weight"])
+    #axX.hist(df["x"]-constants.VD101_X, bins=xbins, color="black", histtype='step', weights=df["weight"])
+    axX.set_ylabel("Counts/10 mm")
+    axX.tick_params(axis="x", labelbottom=False)
+
+    axY.hist(df["y"], bins=ybins, orientation="horizontal", color="black", histtype='step', weights=df["weight"])
+    axY.set_xlabel("Counts/10 mm")
+    axY.tick_params(axis="y", labelleft=False)
+
+    ax2d.set_xlabel("x [mm]")
+    ax2d.set_ylabel("y [mm]")
+
+    fig.suptitle(title, y=0.93)
+    #draw_stm_projection(ax2d)
+    
+    return fig, ax2d, axX, axY
+
+def spectra_stacked_sgnl_bkgd(df, title, forcemax = None, weighted = True):
+    bins_main = np.linspace(0., 2000., 201) # 10keV
+    bins_347  = np.linspace(320., 350., 7) # 5keV
+    bins_844  = np.linspace(830., 860., 7)
+    bins_1809 = np.linspace(1795., 1825., 7)
+    mybins = [bins_main, bins_347, bins_844, bins_1809]
+
+    fig = plt.figure(figsize=(9, 9 if weighted else 6))
+    gs = GridSpec(3 if weighted else 2, 3, figure=fig,
+                  wspace=0.12, hspace=0.25) 
+
+    ax0 = fig.add_subplot(gs[0, :])
+    ax1 = fig.add_subplot(gs[1, 0])
+    ax2 = fig.add_subplot(gs[1, 1], sharey=ax1)
+    ax3 = fig.add_subplot(gs[1, 2], sharey=ax1)
+    ax = [ax0, ax1, ax2, ax3]
+    if weighted:
+        ax4 = fig.add_subplot(gs[2, 0])
+        ax5 = fig.add_subplot(gs[2, 1], sharey=ax4)
+        ax6 = fig.add_subplot(gs[2, 2], sharey=ax4)
+        ax += [ax4, ax5, ax6]
+
+    df_bkgd = df.query("tag=='Ele'").reset_index()
+    df_sgnl = df.query("tag!='Ele'").reset_index()
+
+    for i in range(4):
+        tmax = forcemax
+        if (forcemax != None) and (i!=0):
+            tmax/=10
+        ax[i].hist([df_bkgd['E'], df_sgnl['E']], bins=mybins[i], histtype="barstacked",
+                   weights=[df_bkgd['weight'], df_sgnl['weight']] if weighted else None,
+                   label=['background', 'signal'])
+        ax[i].set_xlim(mybins[i][0],mybins[i][-1])
+        ax[i].set_xlabel('E [keV]')
+    if weighted:
+        #cuts = ["(time > 300) & (time < 700)", "(time > 492) & (time < 1330)", "(time > 500) & (time < 1600)"]
+        #textstr = ["300 ns< t< 700 ns", "492 ns< t< 1330 ns", "500 ns< t< 1600 ns"]
+        cuts = ["(time > 270) & (time < 700)", "(time > 462) & (time < 1330)", "(time > 470) & (time < 1600)"]
+        textstr = ["270 ns< t< 700 ns", "462 ns< t< 1330 ns", "470 ns< t< 1600 ns"]
+        for j in range(3):
+            plot_content = [df_bkgd.query(cuts[j]).reset_index(drop=True)['E'], df_sgnl.query(cuts[j]).reset_index(drop=True)['E']]
+            myweights = [df_bkgd.query(cuts[j]).reset_index(drop=True)['weight'], df_sgnl.query(cuts[j]).reset_index(drop=True)['weight']]
+            ax[4+j].hist(plot_content, bins=mybins[j+1], histtype="barstacked",
+                         weights=myweights,
+                         label=['background', 'signal'])
+            ax[4+j].set_ylim(0.,tmax)
+            ax[4+j].set_xlim(mybins[j+1][0],mybins[j+1][-1])
+            ax[4+j].set_xlabel('E [keV]')
+            ax[4+j].text(0.97, 0.97, textstr[j],
+                         transform=ax[4+j].transAxes,
+                         fontsize=10,
+                         va='top', ha='right',
+                         bbox=dict(facecolor='white', edgecolor='black', alpha=0.8)
+                        )
+                                   
+    ax[0].set_ylabel('weighted counts/10 keV')
+    ax[1].set_ylabel('weighted counts/5 keV')
+    ax[2].tick_params(axis="y", labelleft=False)
+    ax[3].tick_params(axis="y", labelleft=False)
+    if weighted:
+        ax[4].set_ylabel('weighted counts/5 keV')
+        ax[5].tick_params(axis="y", labelleft=False)
+        ax[6].tick_params(axis="y", labelleft=False)
+    ax[0].legend()
+    fig.suptitle(title, y=0.93)
+    
+    return fig, ax
+        
+def spectra_stacked_particle(df, title, forcemax = None, weighted = True):
+    bins = np.linspace(0., 2000., 201) # 10keV
+
+    fig, ax = plt.subplots(figsize=(9,3))
+
+    df_stacks = []
+    list_of_pdgId = sorted(df['pdgId'].unique(), key=abs)
+    for pdgId in list_of_pdgId:
+        mydf = df.query("pdgId==%i"%(pdgId)).reset_index()
+        df_stacks.append(mydf)
+
+    ax.hist([tdf['E'] for tdf in df_stacks], 
+            bins=bins, 
+            histtype="barstacked",
+            weights=[tdf['weight'] for tdf in df_stacks]if weighted else None,
+            label=[pdgid.pdgid_dict[tid] for tid in list_of_pdgId])
+
+    ax.set_ylim(0.,forcemax)
+    ax.set_xlim(bins[0],bins[-1])
+    ax.set_xlabel('E [keV]')
+    ax.set_ylabel('weighted counts/10 keV')
+    ax.legend()
+    fig.suptitle(title)
+    
+    return fig, ax
+
+def twod_hist(df, xitem, yitem, title, forcemax = None):
+    mybins = {"time":np.linspace(0., 500., 26),
+              "E":np.linspace(0., 5000., 41),
+              "r":np.linspace(0., 100., 41)}
+    axtitle = {"time":"time / 50ns",
+               "E":"E / 50 keV",
+               "r":"r / 2.5 mm"}
+    
+    xbins = mybins[xitem]
+    ybins = mybins[yitem]
+
+    df_bkgd = df.query("tag=='Ele'").reset_index()
+    df_sgnl = df.query("tag!='Ele'").reset_index()
+        
+    fig = plt.figure(figsize=(4, 6))
+    gs = GridSpec(2, 1, figure=fig,
+                  wspace=0.05, hspace=0.2) 
+    
+    ax1 = fig.add_subplot(gs[0, 0]) # bkgd
+    ax2 = fig.add_subplot(gs[1, 0]) # sgnl
+    ax = [ax1, ax2]
+
+    H1, xe1, ye1 = np.histogram2d(
+        df_bkgd[xitem], df_bkgd[yitem],
+        bins=[xbins, ybins]
+    )
+    H2, xe2, ye2 = np.histogram2d(
+        df_sgnl[xitem], df_sgnl[yitem],
+        bins=[xbins, ybins],
+        weights=df_sgnl["weight"]
+    )
+    mesh1 = ax1.pcolormesh(xbins, ybins, H1.T, cmap="inferno", vmax=forcemax)
+    mesh2 = ax2.pcolormesh(xbins, ybins, H2.T, cmap="inferno", vmax=forcemax)
+    
+    fig.colorbar(mesh1, ax=ax1, label="unweighted counts", location="right", pad=0.05, orientation='vertical')
+    fig.colorbar(mesh2, ax=ax2, label="unweighted counts", location="right", pad=0.05, orientation='vertical')
+
+    ax1.set_xlabel(axtitle[xitem])
+    ax1.set_ylabel("bkgd "+axtitle[yitem])
+    ax2.set_xlabel(axtitle[xitem])
+    ax2.set_ylabel("sgnl "+axtitle[yitem])
+
+    fig.suptitle(title, y=0.93)
+    
+    return fig, ax
+
+def draw_Mu2e_topview(ax):
+    rectangles = [ #(lower-left x, y), width, height
+        ((constants.ps_cryo_start_Z, constants.production_target_X-constants.ps_cryo_OR), constants.ps_cryo_len, constants.ps_cryo_OR*2), # PS_out
+        ((constants.ps_cryo_start_Z, constants.production_target_X-constants.ps_cryo_IR), constants.ps_cryo_len, constants.ps_cryo_IR*2), # PS_in
+        ((constants.ds_cryo_start_Z, constants.stopping_target_X-constants.ds_cryo_OR), constants.ds_cryo_len, constants.ds_cryo_OR*2), # DS_out
+        ((constants.ds_cryo_start_Z, constants.stopping_target_X-constants.ds_cryo_IR), constants.ds_cryo_len, constants.ds_cryo_IR*2), # DS_in
+        ((constants.IFB_start_Z, constants.stopping_target_X-constants.IFB_OR), constants.IFB_len, constants.IFB_OR*2), # IFB
+        ((constants.stopping_target_start_Z, constants.stopping_target_X-constants.stopping_target_OR), constants.stopping_target_len, constants.stopping_target_OR*2), # stopping_target
+        ((constants.trk_start_Z, constants.stopping_target_X-constants.trk_OR), constants.trl_len, constants.trk_OR*2), # trk
+        ((constants.calo_start_Z, constants.stopping_target_X-constants.calo_OR), constants.calo_len, constants.calo_OR*2), # calo
+        ((constants.VD101_Z, constants.stopping_target_X-1000.), 910., 1400.) # STM_area
+    ]
+    for corner, width, height in rectangles:
+        x, y = corner
+        rect = Rectangle((x, y),  width, height,
+                         edgecolor='grey',
+                         facecolor='none',
+                         linewidth=1)
+        ax.add_patch(rect)
+    ax.set_ylim(-5500., 5500.)
+    #ax.set_xlabel("z")
+    ax.set_ylabel("x")
+    ax.set_aspect('equal')
+    ax.tick_params(axis='x', which='both',
+                   bottom=False, top=False, labelbottom=False)
+    return
+
+def draw_Mu2e_sideview(ax):
+    rectangles = [ #(lower-left x, y), width, height
+        ((constants.ps_cryo_start_Z, -constants.ps_cryo_OR), constants.ps_cryo_len, constants.ps_cryo_OR*2), # PS_out
+        ((constants.ps_cryo_start_Z, -constants.ps_cryo_IR), constants.ps_cryo_len, constants.ps_cryo_IR*2), # PS_in
+        ((constants.ds_cryo_start_Z, -constants.ds_cryo_OR), constants.ds_cryo_len, constants.ds_cryo_OR*2), # DS_out
+        ((constants.ds_cryo_start_Z, -constants.ds_cryo_IR), constants.ds_cryo_len, constants.ds_cryo_IR*2), # DS_in
+        ((constants.IFB_start_Z, -constants.IFB_OR), constants.IFB_len, constants.IFB_OR*2), # IFB
+        ((constants.stopping_target_start_Z, -constants.stopping_target_OR), constants.stopping_target_len, constants.stopping_target_OR*2), # stopping_target
+        ((constants.trk_start_Z, -constants.trk_OR), constants.trl_len, constants.trk_OR*2), # trk
+        ((constants.calo_start_Z, -constants.calo_OR), constants.calo_len, constants.calo_OR*2), # calo
+        ((constants.VD101_Z, -254.), 910., 508.) # STM_area
+    ]
+    for corner, width, height in rectangles:
+        x, y = corner
+        rect = Rectangle((x, y),  width, height,
+                         edgecolor='grey',
+                         facecolor='none',
+                         linewidth=1)
+        ax.add_patch(rect)
+    ax.set_ylim(-3500., 3500.)
+    ax.set_xlabel("z")
+    ax.set_ylabel("y")
+    ax.set_aspect('equal')
+    return
+
+def draw_neutron_event_backtrace(dfn_, dfg_, tag, fileno, index):
+    # grab single neutron entry
+    # dfn_ = df_neutron.query("tag==@tag and fileno==@fileno and index==@index").reset_index().iloc[0]
+    # grab genealogy
+    # dfg_ = df_genealogy.query("tag==@tag and fileno==@fileno and index==@index").reset_index()
+    #display(dfg_)
+    
+    fig = plt.figure(figsize=(15, 6))
+    gs = GridSpec(5, 1, figure=fig,
+                  wspace=0.05, hspace=0.00) 
+    
+    ax_top  = fig.add_subplot(gs[0:3]) # top view
+    ax_side = fig.add_subplot(gs[3:], sharex=ax_top) # side view
+
+    source_id = [dfn_['pdgId']]
+    
+    neutron_track_top  = Line2D([dfn_['startz'], dfn_['z']], [dfn_['startx'], dfn_['x']], linewidth=2, linestyle=':', color=pdgid.pdgid_color_dict[source_id[0]])
+    neutron_track_side = Line2D([dfn_['startz'], dfn_['z']], [dfn_['starty'], dfn_['y']], linewidth=2, linestyle=':', color=pdgid.pdgid_color_dict[source_id[0]])
+    last_point = (dfn_['startx'],dfn_['starty'],dfn_['startz'])
+    ax_top.add_line(neutron_track_top)
+    ax_side.add_line(neutron_track_side)
+    ax_top.scatter(dfn_['startz'], dfn_['startx'], c=pdgid.pdgid_color_dict[source_id[0]], s=5)#s=dfn_['E']/100.)
+    ax_side.scatter(dfn_['startz'], dfn_['starty'], c=pdgid.pdgid_color_dict[source_id[0]], s=5)#s=dfn_['E']/100.)
+    
+    legend_dummy = Line2D([0], [0], linewidth=2, linestyle=':', color=pdgid.pdgid_color_dict[source_id[0]], markerfacecolor=pdgid.pdgid_color_dict[source_id[0]], markersize=0, label=pdgid.pdgid_dict[source_id[0]])
+    legend_handles= []
+    legend_handles.append(legend_dummy)
+
+    for ii in range(len(dfg_)):
+        this_entry = dfg_.iloc[ii]
+        this_pdgid = this_entry['pdgId']
+        try:
+            this_color = pdgid.pdgid_color_dict[this_pdgid]
+        except:
+            this_color = 'yellow'
+        if not this_pdgid in source_id:
+            source_id.append(this_pdgid)
+            try:
+                legend_dummy = Line2D([0], [0], linewidth=2, linestyle=':', color=this_color, markerfacecolor=this_color, markersize=0, label=pdgid.pdgid_dict[this_pdgid])
+            except:
+                legend_dummy = Line2D([0], [0], linewidth=2, linestyle=':', color=this_color, markerfacecolor=this_color, markersize=0, label=str(int(this_pdgid)))
+            legend_handles.append(legend_dummy)
+        this_track_top  = Line2D([this_entry['startz'], last_point[2]], [this_entry['startx'], last_point[0]], linewidth=2, color=this_color, linestyle=':')
+        this_track_side = Line2D([this_entry['startz'], last_point[2]], [this_entry['starty'], last_point[1]], linewidth=2, color=this_color, linestyle=':')
+        ax_top.add_line(this_track_top)
+        ax_side.add_line(this_track_side)
+        ax_top.scatter(this_entry['startz'], this_entry['startx'], c=this_color, s=5) #, s=this_entry['E']/100.)
+        ax_side.scatter(this_entry['startz'], this_entry['starty'], c=this_color, s=5) #, s=this_entry['E']/100.)
+        last_point = (this_entry['startx'],this_entry['starty'],this_entry['startz'])
+
+    ax_top.legend(handles=legend_handles, loc="center left", bbox_to_anchor=(1.02, 0.5))
+
+    draw_Mu2e_topview(ax_top)
+    draw_Mu2e_sideview(ax_side)
+
+    fig.suptitle("Back trace of "+tag+" %03i "%(fileno)+pdgid.pdgid_dict[dfn_['pdgId']]+" event %i"%(index), y=0.93)
+
+    return fig, ax_top, ax_side
+
+def draw_particle_event_backtrace(dfp_, df_genealogy, tag, fileno, index):
+    return draw_neutron_event_backtrace(dfp_, df_genealogy, tag, fileno, index)
+
+def draw_neutron_source_all(df_neutron, df_genealogy, title):
+    df_source = pd.DataFrame()
+    
+    fig = plt.figure(figsize=(15, 6))
+    gs = GridSpec(5, 1, figure=fig,
+                  wspace=0.05, hspace=0.0) 
+    
+    ax_top  = fig.add_subplot(gs[0:3]) # top view
+    ax_side = fig.add_subplot(gs[3:], sharex=ax_top) # side view
+
+    source_id = []
+    source_cnt = []
+    legend_handles = []
+
+    for ii in range(len(df_neutron)):
+        dfn_ = df_neutron.iloc[ii]
+        tag = dfn_['tag']
+        fileno = dfn_['fileno']
+        index = dfn_['index']
+        dfg_ = df_genealogy.query("tag==@tag and fileno==@fileno and index==@index").reset_index(drop=True)
+        neutron_start_point = (dfn_['startx'],dfn_['starty'],dfn_['startz'])
+        neutron_start_time = dfn_['starttime']
+        neutron_initial_creation = dfn_['creationCode']
+        E_at_VD = dfn_['E']
+        startpx, startpy, startpz = dfn_['startpx'], dfn_['startpy'], dfn_['startpz']
+
+        for jj in range(len(dfg_)):
+            dfg_entry = dfg_.iloc[jj]
+            if dfg_entry['pdgId']==dfn_['pdgId']: # neutron
+                neutron_start_point = (dfg_entry['startx'],dfg_entry['starty'],dfg_entry['startz'])
+                neutron_start_time = dfg_entry['starttime']
+                neutron_initial_creation = dfg_entry['creationCode']
+                startpx, startpy, startpz = dfg_entry['startpx'], dfg_entry['startpy'], dfg_entry['startpz']
+            else:
+                this_pdgid = dfg_entry['pdgId']
+                parent_end_time = dfg_entry['endtime']
+                break
+                
+        try:
+            this_color = pdgid.pdgid_color_dict[this_pdgid]
+        except:
+            this_color = 'yellow'
+
+        if this_pdgid in source_id:
+            source_cnt[source_id.index(this_pdgid)] += 1
+        else:
+            source_id.append(this_pdgid)
+            source_cnt.append(1)
+            try:
+                legend_dummy = Line2D([0], [0], marker='o', color=this_color, markerfacecolor=this_color, markersize=5, label=pdgid.pdgid_dict[this_pdgid])
+            except:
+                legend_dummy = Line2D([0], [0], marker='o', color=this_color, markerfacecolor=this_color, markersize=5, label=str(this_pdgid))
+
+            legend_handles.append(legend_dummy)
+
+        ax_top.scatter(neutron_start_point[2], neutron_start_point[0], c=this_color, s=5)#, s=this_entry['E']/100.)
+        ax_side.scatter(neutron_start_point[2], neutron_start_point[1], c=this_color, s=5)#, s=this_entry['E']/100.)
+
+        dfs_ = pd.DataFrame()
+        dfs_['tag'] = [tag] # Mu, Ele, 1809, N0
+        dfs_['fileno'] = [fileno]
+        dfs_['index'] = [index] 
+        dfs_['starttime'] = [neutron_start_time]
+        dfs_['parentendtime'] = [parent_end_time]    
+        dfs_['creationCode'] = [neutron_initial_creation]
+        dfs_['parentId'] = [this_pdgid]
+        dfs_['x'] = [neutron_start_point[0]]
+        dfs_['y'] = [neutron_start_point[1]]
+        dfs_['z'] = [neutron_start_point[2]]
+        dfs_['EatVD'] = [E_at_VD]
+        dfs_['startE'] = [np.sqrt(startpx*startpx+startpy*startpy+startpz*startpz+939565**2)-939565]
+        df_source = pd.concat([df_source,dfs_], ignore_index=True)
+                    
+    draw_Mu2e_topview(ax_top)
+    draw_Mu2e_sideview(ax_side)
+
+    ax_top.legend(handles=legend_handles, loc="center left", bbox_to_anchor=(1.02, 0.5))
+
+    fig.suptitle(title, y=0.93)
+    
+    print("source count")
+    for i, v in enumerate(source_id):
+        try:
+            print(pdgid.pdgid_dict[v], ": ", source_cnt[i])
+        except:
+            print(v, ": ", source_cnt[i])
+
+    return df_source, fig, ax_top, ax_side
+    
+def draw_particle_source_all(df_source, title):
+    fig = plt.figure(figsize=(15, 6))
+    gs = GridSpec(5, 1, figure=fig,
+                  wspace=0.05, hspace=0.0) 
+    
+    ax_top  = fig.add_subplot(gs[0:3]) # top view
+    ax_side = fig.add_subplot(gs[3:], sharex=ax_top) # side view
+
+    print('------------------------------------------------------------------------------')
+    source_id = np.sort(df_source['parentpdgId'].unique())
+    for myid in source_id:
+        dfs_ = df_source.query("parentpdgId==@myid").reset_index(drop=True)
+
+        try:
+            this_parent_name = pdgid.pdgid_dict[myid]
+            this_color = pdgid.pdgid_color_dict[myid]
+        except:
+            this_parent_name = str(myid)
+            this_color = 'yellow'
+        
+        print("Parent pdgId: ", myid, this_parent_name)
+        print("count: ", len(dfs_))
+        print(dfs_['creationCode'].value_counts())
+        print('******')
+        
+        ax_top.scatter(dfs_['z'], dfs_['x'], c=this_color, label=this_parent_name, s=5)#, s=this_entry['E']/100.)
+        ax_side.scatter(dfs_['z'], dfs_['y'], c=this_color, label=this_parent_name, s=5)#, s=this_entry['E']/100.)
+
+    draw_Mu2e_topview(ax_top)
+    draw_Mu2e_sideview(ax_side)
+
+    ax_top.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
+    fig.suptitle(title, y=0.93)
+
+    return fig, ax_top, ax_side
