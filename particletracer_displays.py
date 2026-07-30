@@ -45,7 +45,6 @@ import sys
 import argparse
 
 import numpy as np
-import pandas as pd
 import matplotlib
 matplotlib.use("Agg")   # no interactive display; must precede the pyplot import
 import matplotlib.pyplot as plt
