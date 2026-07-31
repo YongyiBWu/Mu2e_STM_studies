@@ -185,6 +185,61 @@ last_stage_POT = {
     "Neutrals":float(2e8)
 }
 
+# ---------------------------------------------------------------------------------
+# MDC2025 normalization
+#
+# 1e8 POT corresponds to:
+#   EleBeamCat      5532579 evts
+#   MuBeamCat        213816 evts
+#   TargetStopsCat  1442670 evts / (4e9/213816/1000) ~ 77100 evts (prescale 1000)
+#   NeutralsCat    53426053 evts
+#
+# To reach 2e10 POT, 2e2 times the above events are needed:
+#   EleBeamCat      2 * 5.5326e8 evts = 1000 runs * 1106516 evts/run *  1    norm factor
+#   MuBeamCat       2 * 2.1382e7 evts = 1000 runs *   42764 evts/run *  1    norm factor
+#   TargetStopsCat  2 * 7.7116e6 evts = 1000 runs * 1442670 evts/run *  0.01 norm factor
+#   NeutralsCat     2 * 5.3426e9 evts = 8000 runs *   53426 evts/run * 25    norm factor
+#
+# Not every planned run exists, so the per-event weight is scaled by
+# planned_runs/actual_runs to still represent the full 2e10 POT.
+MDC2025_goal_POT = float(2e10)
+
+# per tag: (planned runs, evts per run, normalization factor, actual runs)
+MDC2025_normalization = {
+    "Ele"        : (1000, 1106516,  1.00, 1000),
+    "Mu"         : (1000,   42764,  1.00,  994),
+    "1809"       : (1000, 1442670,  0.01,  999),   # TargetStopsCat
+    "Neutrals101": (8000,   53426, 25.00, 7590),
+    "Neutrals116": (8000,   53426, 25.00, 7590),
+}
+
+
+def getMDC2025weight(tag):
+    """Per-event weight taking `tag` to MDC2025_goal_POT.
+
+    The planned sample is planned_runs * evts_per_run * norm events. Only actual_runs
+    of those runs exist, so each event that does exist has to stand in for
+    planned/actual of them; the weight is that ratio times the normalization factor.
+    Returns 1.0 for a tag with no bookkeeping.
+    """
+    if tag not in MDC2025_normalization:
+        print("WARNING: no MDC2025 normalization for tag '%s'; weight set to 1." % tag)
+        return 1.0
+    planned, evts_per_run, norm, actual = MDC2025_normalization[tag]
+    if actual <= 0:
+        print("WARNING: tag '%s' has no runs; weight set to 1." % tag)
+        return 1.0
+    return norm * float(planned) / float(actual)
+
+
+def getMDC2025events(tag):
+    """(planned events, actual events) for `tag`, before the normalization factor."""
+    if tag not in MDC2025_normalization:
+        return (0., 0.)
+    planned, evts_per_run, norm, actual = MDC2025_normalization[tag]
+    return (float(planned)*evts_per_run, float(actual)*evts_per_run)
+
+
 def getrootlist(geometry, simtype):
     return root_file[geometry][simtype]
 

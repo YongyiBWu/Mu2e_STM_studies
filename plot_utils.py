@@ -620,7 +620,7 @@ def _kE_marker_size(v, lo, hi, smin, smax):
 def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None,
                  smin = 8., smax = 300., spectrum_bins = 50, notraj_alpha = 0.5,
                  down_alpha = 0.5, xlim = (-8000., 2000.), ylim = (-3500., 5000.),
-                 geometry = True, ylog_min = 10):
+                 geometry = True, ylog_min = 10, weight = None, weight_label = None):
     # Particles crossing the plane z = z0: where they cross, and their kE spectrum.
     #
     # Left panel  -- kE spectrum per PDG ID. Solid = MCTraj, dashed = NoTraj. x is
@@ -743,11 +743,18 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     # whole figure rather than between the two plots. The title carries the grand total;
     # each particle label carries its own (total/upstream/downstream).
     n_down_all = int(dfx_['downstream'].astype(bool).sum())
+    legtitle = "%i crossings (u%i/d%i)" % (len(dfx_), len(dfx_) - n_down_all, n_down_all)
+    if weight is not None:
+        # the plot shows raw crossings; these say what each one stands for, and what
+        # they add up to once weighted -- the latter is the number comparable between
+        # tags, whose weights differ by more than an order of magnitude
+        legtitle += "\nweight %.2g/evt" % weight
+        legtitle += "\n= %.2g weighted" % (len(dfx_)*weight)
+        if weight_label:
+            legtitle += "\n" + weight_label
     leg = ax_face.legend(handles=legend_handles, loc="upper left",
                          bbox_to_anchor=(1.02, 1.0), fontsize=8,
-                         title="%i crossings (u%i/d%i)"
-                               % (len(dfx_), len(dfx_) - n_down_all, n_down_all),
-                         title_fontsize=8)
+                         title=legtitle, title_fontsize=8)
 
     # second legend keying marker area to kE: low, geometric mid, high. The smallest
     # sample is the floor whenever the data reaches it, so label it as an upper bound --

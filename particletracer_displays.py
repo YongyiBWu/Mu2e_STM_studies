@@ -158,6 +158,21 @@ def summarize_matched(sel):
     print("  %-12s %6i" % ("TOTAL", len(sel)))
     print("=====================================")
 
+
+def summarize_normalization(tags):
+    """Per-tag weight taking each sample to the MDC2025 goal POT."""
+    print("===== normalization to %.0e POT =====" % filepath.MDC2025_goal_POT)
+    print("  %-12s %6s %6s %10s %8s" % ("tag", "runs", "of", "evts", "weight"))
+    for tag in tags:
+        if tag not in filepath.MDC2025_normalization:
+            print("  %-12s  (no bookkeeping; weight 1)" % tag)
+            continue
+        planned, evts_per_run, norm, actual = filepath.MDC2025_normalization[tag]
+        _, actual_evts = filepath.getMDC2025events(tag)
+        print("  %-12s %6i %6i %10.3e %8.4g"
+              % (tag, actual, planned, actual_evts, filepath.getMDC2025weight(tag)))
+    print("=====================================")
+
 def select(df_traj, tags=None, pdgids=None, positive_pz=False, pz_field='endPz'):
     """One row per particle that reached the VD, optionally cut by tag / pdgId / pz.
 
@@ -238,8 +253,12 @@ def draw_kE_pages(df_traj, pdf, planes=None, tags=None):
                 continue
             title = "%s (z = %.1f mm)  --  [%s]" % (zname, z0, tag)
             print(title)
-            fig, ax_face, ax_spec, dfx_ = plot_utils.draw_kE_at_z(dft_, z0, title)
-            print("    %i crossing(s)" % len(dfx_))
+            w = filepath.getMDC2025weight(tag)
+            fig, ax_face, ax_spec, dfx_ = plot_utils.draw_kE_at_z(
+                dft_, z0, title, weight=w,
+                weight_label="to %.0e POT" % filepath.MDC2025_goal_POT)
+            print("    %i crossing(s), weight %.4g -> %.4g weighted"
+                  % (len(dfx_), w, len(dfx_)*w))
             pdf.savefig(fig)
             plt.close(fig)
             npage += 1
@@ -345,6 +364,7 @@ def main(argv=None):
                  positive_pz=args.positive_pz, pz_field=args.pz_field)
     print("matched particles:    ", len(sel), "(selected)")
     summarize_matched(sel)
+    summarize_normalization(readtags)
 
     if args.no_draw:
         return 0
