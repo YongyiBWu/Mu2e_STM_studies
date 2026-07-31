@@ -620,10 +620,11 @@ def _kE_marker_size(v, lo, hi, smin, smax):
 def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None,
                  smin = 8., smax = 300., spectrum_bins = 50, notraj_alpha = 0.5,
                  down_alpha = 0.5, xlim = (-8000., 2000.), ylim = (-3500., 5000.),
-                 geometry = True):
+                 geometry = True, ylog_min = 10):
     # Particles crossing the plane z = z0: where they cross, and their kE spectrum.
     #
-    # Left panel  -- kE spectrum per PDG ID, log-log. Solid = MCTraj, dashed = NoTraj.
+    # Left panel  -- kE spectrum per PDG ID. Solid = MCTraj, dashed = NoTraj. x is
+    #                always log; y goes log only if the tallest bar reaches ylog_min.
     # Right panel -- x vs y at the crossing, the beam face seen looking downstream.
     #   colour  : PDG ID (pdgid.pdgid_color_dict)
     #   size    : area proportional to log10(kE), between smin and smax
@@ -671,6 +672,7 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     bins = np.logspace(np.log10(lo), np.log10(hi), spectrum_bins+1)
 
     legend_handles = []
+    peak = 0          # tallest histogram bar, decides whether the y axis goes log
     for pdg in np.sort(dfx_['pdgId'].unique()):
         d_ = dfx_[dfx_['pdgId'] == pdg]
         try:
@@ -705,19 +707,26 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
                                 linewidths=1.0, alpha=down_alpha*amul)
 
         # swatch drawn the way the downstream markers are: filled, translucent, no rim.
-        # The label carries this PDG's crossing count, so the colours key both panels.
+        # The label carries this PDG's crossing counts as (total/u upstream/d downstream),
+        # so the colours key both panels and no separate stats box is needed.
+        n_down = int(d_['downstream'].astype(bool).sum())
+        n_up = len(d_) - n_down
         legend_handles.append(Line2D([0], [0], linestyle='none', marker='o',
                                      markerfacecolor=this_color, markeredgecolor='none',
                                      alpha=down_alpha, markersize=8,
-                                     label="%s  (%i)" % (this_label, len(d_))))
+                                     label="%s (%i/u%i/d%i)"
+                                           % (this_label, len(d_), n_up, n_down)))
 
         # spectrum: log-spaced bins; solid for real trajectories, dashed for start/end
         for real, style in ((True, '-'), (False, '--')):
             k_ = d_[d_['hasTrajectory'].astype(bool) == real]['kE'].values
             k_ = k_[k_ > 0]
             if len(k_):
-                ax_spec.hist(k_, bins=bins, histtype='step', color=this_color,
-                             linestyle=style, alpha=1.0 if real else notraj_alpha)
+                counts, _, _ = ax_spec.hist(k_, bins=bins, histtype='step',
+                                            color=this_color, linestyle=style,
+                                            alpha=1.0 if real else notraj_alpha)
+                # track the tallest bar, to decide on a log y axis below
+                peak = max(peak, counts.max() if len(counts) else 0)
 
     # style keys, appended after the particle colours; these mirror how the markers
     # are actually drawn -- filled+translucent downstream, outline-only upstream
@@ -731,9 +740,14 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     legend_handles.append(Line2D([0], [0], linestyle='--', color='grey',
                                  alpha=notraj_alpha, label='NoTraj'))
     # both legends hang off ax_face, the right-hand panel, so they sit outboard of the
-    # whole figure rather than between the two plots
+    # whole figure rather than between the two plots. The title carries the grand total;
+    # each particle label carries its own (total/upstream/downstream).
+    n_down_all = int(dfx_['downstream'].astype(bool).sum())
     leg = ax_face.legend(handles=legend_handles, loc="upper left",
-                         bbox_to_anchor=(1.02, 1.0), fontsize=8)
+                         bbox_to_anchor=(1.02, 1.0), fontsize=8,
+                         title="%i crossings (u%i/d%i)"
+                               % (len(dfx_), len(dfx_) - n_down_all, n_down_all),
+                         title_fontsize=8)
 
     # second legend keying marker area to kE: low, geometric mid, high. The smallest
     # sample is the floor whenever the data reaches it, so label it as an upper bound --
@@ -766,37 +780,14 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     ax_face.set_title("position at z = %.1f mm  (area ~ log10 kE)" % z0, fontsize=10)
 
     ax_spec.set_xscale('log')
-    ax_spec.set_yscale('log')
+    # a log y axis over a handful of counts is mostly empty decades and odd minor ticks,
+    # so only use it once the tallest bar makes it worth having
+    if peak >= ylog_min:
+        ax_spec.set_yscale('log')
     ax_spec.set_xlabel("kE [MeV]")
     ax_spec.set_ylabel("count")
     ax_spec.set_title("kE spectrum at z = %.1f mm" % z0, fontsize=10)
 
-    # crossing counts as a table: dstrm/ustrm against pdgId, with row and column totals.
-    # These count every crossing, including any at kE <= 0 that the log-x histogram
-    # cannot show, so the totals can exceed what the bars add up to.
-    down_mask = dfx_['downstream'].astype(bool)
-    pdgs = np.sort(dfx_['pdgId'].unique())
-    names = []
-    for pdg in pdgs:
-        try:
-            names.append(pdgid.pdgid_dict[pdg])
-        except KeyError:
-            names.append(str(int(pdg)))
-    namew = max([len(n) for n in names] + [5])   # 5 = len("total")
-
-    countlines = ["%-*s  %5s %5s %5s" % (namew, "", "dstrm", "ustrm", "total")]
-    for pdg, nm in zip(pdgs, names):
-        sel_ = (dfx_['pdgId'] == pdg)
-        nd = int((sel_ & down_mask).sum())
-        nu = int((sel_ & ~down_mask).sum())
-        countlines.append("%-*s  %5i %5i %5i" % (namew, nm, nd, nu, nd + nu))
-    countlines.append("%-*s  %5i %5i %5i"
-                      % (namew, "total", int(down_mask.sum()),
-                         int((~down_mask).sum()), len(dfx_)))
-    ax_spec.text(0.02, 0.98, "\n".join(countlines),
-                 transform=ax_spec.transAxes, fontsize=8, family='monospace',
-                 va='top', ha='left',
-                 bbox=dict(facecolor='white', edgecolor='grey', alpha=0.8))
 
     if title is not None:
         fig.suptitle(title, y=0.98)
