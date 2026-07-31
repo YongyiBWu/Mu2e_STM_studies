@@ -28,6 +28,12 @@ ps_cryo_len = ps_cryo_end_Z-ps_cryo_start_Z
 ps_cryo_OR = 1300.
 ps_cryo_IR = 750.
 
+# hallway cross section in the x-y (beam face) plane, hall coords
+hallway_X_min = -7700.
+hallway_X_max =  -100.
+hallway_Y_min = -2400.
+hallway_Y_max =  3200.
+
 stopping_target_X = -3904.
 stopping_target_Y = 0.
 stopping_target_start_Z = 5471.

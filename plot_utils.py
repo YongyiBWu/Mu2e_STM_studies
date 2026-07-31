@@ -529,6 +529,23 @@ def draw_particle_source_all(df_source, title):
 
     return fig, ax_top, ax_side
 
+def draw_Mu2e_faceview(ax, hallway=True, ds=True):
+    # Overlay the x-y (beam face) geometry on ax, as seen looking downstream.
+    #   hallway -- the hall cross section
+    #   ds      -- the DS cryostat bore, centred on the beamline at x = stopping_target_X
+    if hallway:
+        ax.add_patch(Rectangle((constants.hallway_X_min, constants.hallway_Y_min),
+                               constants.hallway_X_max - constants.hallway_X_min,
+                               constants.hallway_Y_max - constants.hallway_Y_min,
+                               edgecolor='grey', facecolor='none', linewidth=1))
+    if ds:
+        # outer and inner wall of the cryostat, concentric on the beamline
+        for r in (constants.ds_cryo_OR, constants.ds_cryo_IR):
+            ax.add_patch(Circle((constants.stopping_target_X, constants.stopping_target_Y),
+                                r, edgecolor='grey', facecolor='none', linewidth=1))
+    return
+
+
 def find_z_crossings(dfe_, z0):
     # Find where each trajectory in dfe_ crosses the plane z = z0.
     #
@@ -589,7 +606,8 @@ def _kE_marker_size(v, lo, hi, smin, smax):
 
 def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None,
                  smin = 8., smax = 300., spectrum_bins = 50, notraj_alpha = 0.5,
-                 down_alpha = 0.5, xlim = (-8000., 0.), ylim = (-3500., 3500.)):
+                 down_alpha = 0.5, xlim = (-8000., 2000.), ylim = (-3500., 5000.),
+                 geometry = True):
     # Particles crossing the plane z = z0: where they cross, and their kE spectrum.
     #
     # Left panel  -- kE spectrum per PDG ID, log-log. Solid = MCTraj, dashed = NoTraj.
@@ -602,8 +620,8 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     #             hasTrajectory == False (those hold only start/end, so the crossing is
     #             interpolated on a straight line and is not a tracked path)
     #
-    # xlim/ylim default to the beam-face region: x as requested, y matching the side
-    # view drawn by draw_Mu2e_sideview so the two read on the same scale.
+    # xlim/ylim default to the beam-face region around the hallway cross section.
+    # geometry overlays the hallway outline and the DS cryostat bore (draw_Mu2e_faceview).
     #
     # dfe_ is any frame of trajectory entries (the whole df_traj, or one event).
     # tags: restrict to these tags before plotting. The returned crossings frame keeps
@@ -713,9 +731,13 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     ax_face.legend(handles=size_handles, loc="lower left", bbox_to_anchor=(1.02, 0.0),
                    fontsize=8, labelspacing=1.4, title="kE", title_fontsize=8)
 
+    if geometry:
+        draw_Mu2e_faceview(ax_face)
+
     ax_face.set_xlabel("x [mm]")
     ax_face.set_ylabel("y [mm]")
     ax_face.set_aspect('equal')
+    # limits after the patches, so the overlay cannot autoscale the view
     if xlim is not None:
         ax_face.set_xlim(*xlim)
     if ylim is not None:
