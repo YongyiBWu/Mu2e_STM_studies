@@ -708,14 +708,17 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
 
         # swatch drawn the way the downstream markers are: filled, translucent, no rim.
         # The label carries this PDG's crossing counts as (total/u upstream/d downstream),
-        # so the colours key both panels and no separate stats box is needed.
+        # so the colours key both panels and no separate stats box is needed. With a
+        # weight, the weighted totals follow in the same order.
         n_down = int(d_['downstream'].astype(bool).sum())
         n_up = len(d_) - n_down
+        this_count = "%s (%i/u%i/d%i)" % (this_label, len(d_), n_up, n_down)
+        if weight is not None:
+            this_count += "\n    -> %.0f/u%.0f/d%.0f" % (len(d_)*weight, n_up*weight,
+                                                         n_down*weight)
         legend_handles.append(Line2D([0], [0], linestyle='none', marker='o',
                                      markerfacecolor=this_color, markeredgecolor='none',
-                                     alpha=down_alpha, markersize=8,
-                                     label="%s (%i/u%i/d%i)"
-                                           % (this_label, len(d_), n_up, n_down)))
+                                     alpha=down_alpha, markersize=8, label=this_count))
 
         # spectrum: log-spaced bins; solid for real trajectories, dashed for start/end
         for real, style in ((True, '-'), (False, '--')):
@@ -749,7 +752,7 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
         # they add up to once weighted -- the latter is the number comparable between
         # tags, whose weights differ by more than an order of magnitude
         legtitle += "\nweight %.2g/evt" % weight
-        legtitle += "\n= %.2g weighted" % (len(dfx_)*weight)
+        legtitle += "\n= %.0f weighted" % (len(dfx_)*weight)
         if weight_label:
             legtitle += "\n" + weight_label
     leg = ax_face.legend(handles=legend_handles, loc="upper left",
