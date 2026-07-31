@@ -42,7 +42,6 @@ Examples:
 """
 from __future__ import print_function
 import sys
-import re
 import argparse
 
 # ROOT first and in batch mode: IgnoreCommandLineOptions keeps PyROOT from parsing our
@@ -80,6 +79,20 @@ chaincols = ['simId', 'pdgId', 'matched', 'hasTrajectory', 'nPoints',
              'parentSimId', 'parentPdgId', 'creationCode', 'isPrimary',
              'startx', 'starty', 'startz', 'starttime', 'startkE',
              'endx', 'endy', 'endz', 'endtime', 'endkE']
+
+# Short header labels for the PDF chain table. The full names are much wider than the
+# values under them (hasTrajectory is 13 chars over a True/False), and to_string() keeps
+# every header on one line, so the long ones alone would set the table width.
+chainheads = {
+    'hasTrajectory': 'hasTraj',
+    'parentSimId'  : 'parSimId',
+    'parentPdgId'  : 'parPdgId',
+    'creationCode' : 'crCode',
+    'isPrimary'    : 'prim',
+    'starttime'    : 'startt',
+    'nPoints'      : 'nPts',
+    'matched'      : 'match',
+}
 
 
 def chain_title(seed_, nchain):
@@ -174,16 +187,16 @@ def chain_table_figure(dfc_, title, cols=None, figsize=(15, 6)):
     width as the display it follows (both are saved without bbox_inches='tight', which
     would otherwise crop each page to its own content).
 
-    Floats are shown to 3 decimals to keep the line short, and the header is wrapped
-    over as many rows as it needs so a long column name does not widen the table.
+    Floats are shown to 3 decimals and the wide column names are abbreviated via
+    chainheads, both to keep the line short enough to stay on the page.
     """
     if cols is None:
         cols = chaincols
     use = [c for c in cols if c in dfc_.columns]
 
-    # wrap the labels first, then 3 decimals: positions/times are the wide columns and
-    # full precision is not readable on a page anyway
-    text = _wrap_columns(dfc_[use]).to_string(float_format=lambda v: "%.3f" % v)
+    # short header labels, so the wide names do not set their column's width
+    text = dfc_[use].rename(columns=chainheads).to_string(
+        float_format=lambda v: "%.3f" % v)
     lines = text.split("\n")
     width = max(len(l) for l in lines) if lines else 1
 
@@ -194,30 +207,6 @@ def chain_table_figure(dfc_, title, cols=None, figsize=(15, 6)):
              family="monospace", fontsize=fontsize,
              va="top", ha="left")
     return fig
-
-
-def _wrap_columns(df_, minlen=9):
-    """Wrap the wide camelCase column labels over several header rows.
-
-    A label like 'hasTrajectory' is far wider than the True/False under it, so the label
-    alone sets that column's width. Splitting it at the capitals ('has' / 'Trajectory')
-    and joining with newlines lets pandas stack the label vertically and size the column
-    to its data instead.
-
-    Only labels of at least minlen characters are wrapped: the short ones do not drive
-    the table width, and breaking them reads worse than leaving them (startkE would
-    split as 'startk' / 'E', since the k of kE is not a word boundary).
-    """
-    ren = {}
-    for c in df_.columns:
-        name = str(c)
-        if len(name) < minlen:
-            continue
-        # break before each capital: hasTrajectory -> has / Trajectory
-        pieces = re.findall(r'[^A-Z]+|[A-Z][^A-Z]*', name)
-        if len(pieces) > 1:
-            ren[c] = "\n".join(pieces)
-    return df_.rename(columns=ren) if ren else df_
 
 
 def draw(df_traj, sel, pdfname, nshow=-1, stride=1, print_chains=False):
