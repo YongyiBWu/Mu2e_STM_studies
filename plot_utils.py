@@ -720,16 +720,35 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
                                      markerfacecolor=this_color, markeredgecolor='none',
                                      alpha=down_alpha, markersize=8, label=this_count))
 
-        # spectrum: log-spaced bins; solid for real trajectories, dashed for start/end
-        for real, style in ((True, '-'), (False, '--')):
-            k_ = d_[d_['hasTrajectory'].astype(bool) == real]['kE'].values
+        # Spectrum, log-spaced bins, matching the face panel: filled = downstream,
+        # outline = upstream, solid = MCTraj, dashed = NoTraj. All four are stacked, so
+        # each sits on top of the ones below and the top of the stack is this PDG's
+        # total -- overlaying them would hide whichever is smaller behind the others.
+        down_m = d_['downstream'].astype(bool)
+        real_m = d_['hasTrajectory'].astype(bool)
+        bottom = np.zeros(len(bins) - 1)
+        for is_down, is_real, style in ((True,  True,  '-'), (True,  False, '--'),
+                                        (False, True,  '-'), (False, False, '--')):
+            k_ = d_[(down_m == is_down) & (real_m == is_real)]['kE'].values
             k_ = k_[k_ > 0]
-            if len(k_):
-                counts, _, _ = ax_spec.hist(k_, bins=bins, histtype='step',
-                                            color=this_color, linestyle=style,
-                                            alpha=1.0 if real else notraj_alpha)
-                # track the tallest bar, to decide on a log y axis below
-                peak = max(peak, counts.max() if len(counts) else 0)
+            if not len(k_):
+                continue
+            n_, _ = np.histogram(k_, bins=bins)
+            a_ = 1.0 if is_real else notraj_alpha
+            if is_down:
+                # downstream: filled, translucent so a stack stays readable
+                ax_spec.hist(bins[:-1], bins=bins, weights=n_, bottom=bottom,
+                             histtype='stepfilled', facecolor=this_color,
+                             edgecolor=this_color, linestyle=style, linewidth=1.2,
+                             alpha=down_alpha*a_)
+            else:
+                # upstream: outline only
+                ax_spec.hist(bins[:-1], bins=bins, weights=n_, bottom=bottom,
+                             histtype='step', edgecolor=this_color, linestyle=style,
+                             linewidth=1.2, alpha=a_)
+            bottom = bottom + n_
+        # track the tallest stack, to decide on a log y axis below
+        peak = max(peak, bottom.max() if len(bottom) else 0)
 
     # style keys, appended after the particle colours; these mirror how the markers
     # are actually drawn -- filled+translucent downstream, outline-only upstream
