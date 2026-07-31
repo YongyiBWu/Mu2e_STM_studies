@@ -34,7 +34,7 @@ Examples:
   # only forward-going matched particles
   python particletracer_displays.py --positive-pz
 
-  # dump the chain tables as text too
+  # add a facing page per display holding the chain table
   python particletracer_displays.py --print-chains
 
   # just the first 20
@@ -166,6 +166,28 @@ def select(df_traj, tags=None, pdgids=None, positive_pz=False, pz_field='endPz')
     return sel
 
 
+def chain_table_figure(dfc_, title, cols=None):
+    """Render the genealogy chain table as a monospace text page for the PDF.
+
+    The table is ~19 columns wide, so the font is scaled to the widest line to keep it
+    on the page instead of running off the right edge.
+    """
+    if cols is None:
+        cols = chaincols
+    text = dfc_[[c for c in cols if c in dfc_.columns]].to_string()
+    lines = text.split("\n")
+    width = max(len(l) for l in lines) if lines else 1
+
+    # landscape page; shrink the font until the widest line fits across it
+    fig = plt.figure(figsize=(15, 6))
+    # 0.60 of a point of width per character at 10pt, scaled to the page in inches
+    fontsize = min(10.0, 15.0 * 72.0 * 0.95 / (width * 0.60))
+    fig.text(0.01, 0.98, title + "\n\n" + text,
+             family="monospace", fontsize=fontsize,
+             va="top", ha="left")
+    return fig
+
+
 def draw(df_traj, sel, pdfname, nshow=-1, stride=1, print_chains=False):
     """One PDF page per matched particle, walking its genealogy back to the primary."""
     if not len(sel):
@@ -182,12 +204,16 @@ def draw(df_traj, sel, pdfname, nshow=-1, stride=1, print_chains=False):
             title = chain_title(seed_, len(dfc_))
             print('------------------------------------------------------------------------------')
             print(title)
-            if print_chains:
-                print(dfc_[chaincols].to_string())
             fig, ax_top, ax_side = plot_utils.draw_particle_tracer_event(dfc_, title)
             pdf.savefig(fig, bbox_inches='tight')
             plt.close(fig)
             npage += 1
+            if print_chains:
+                # the chain table goes on its own page, facing the display it describes
+                figt = chain_table_figure(dfc_, title)
+                pdf.savefig(figt)
+                plt.close(figt)
+                npage += 1
     print("written %s (%i pages)" % (pdfname, npage))
     return npage
 
@@ -214,7 +240,8 @@ def parse_args(argv=None):
                    help="which stored momentum --positive-pz cuts on; the VD-hit "
                         "momentum is not in the tree (default: %(default)s)")
     p.add_argument("--print-chains", action="store_true",
-                   help="also print each genealogy chain as a table")
+                   help="add a page to the PDF with each genealogy chain as a table "
+                        "(doubles the page count)")
     p.add_argument("--no-draw", action="store_true",
                    help="only read/summarize; skip the PDF")
     return p.parse_args(argv)
