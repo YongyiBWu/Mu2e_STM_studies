@@ -529,6 +529,194 @@ def draw_particle_source_all(df_source, title):
 
     return fig, ax_top, ax_side
 
+def find_z_crossings(dfe_, z0):
+    # Find where each trajectory in dfe_ crosses the plane z = z0.
+    #
+    # A trajectory is a polyline through its stored points, so a crossing is a segment
+    # whose endpoints straddle z0. kE (and x, y, t) at the crossing are linearly
+    # interpolated between those two points. A particle that turns around can cross the
+    # same plane more than once; every crossing is returned.
+    #
+    # Returns a DataFrame with one row per crossing, carrying tag/fileno/run/subRun/
+    # event/simId/matched/hasTrajectory through so the result can still be split by tag
+    # (or by event, or by hasTrajectory) later.
+    #   x, y, t, kE  -- interpolated at z = z0
+    #   downstream   -- True if the crossing segment runs with dz > 0
+    #
+    # NOTE the interpolation is only as good as the stored points. Entries with
+    # hasTrajectory == False hold just the start and end position, so their "crossing"
+    # is a point on the straight line between those two -- not a real tracked path.
+    # draw_kE_at_z draws those at 50% alpha for that reason.
+    carry = ['tag', 'fileno', 'run', 'subRun', 'event',
+             'simId', 'pdgId', 'matched', 'hasTrajectory']
+    rows = []
+    for ii in range(len(dfe_)):
+        e_ = dfe_.iloc[ii]
+        z = np.asarray(e_['z'], dtype=float)
+        if len(z) < 2:
+            continue
+        x  = np.asarray(e_['x'], dtype=float)
+        y  = np.asarray(e_['y'], dtype=float)
+        t  = np.asarray(e_['t'], dtype=float)
+        kE = np.asarray(e_['kE'], dtype=float)
+
+        dz_prev = z[:-1] - z0
+        dz_next = z[1:] - z0
+        # segments that straddle the plane; <=/>= catches a point sitting exactly on it
+        straddle = ((dz_prev <= 0) & (dz_next >= 0)) | ((dz_prev >= 0) & (dz_next <= 0))
+        for jj in np.nonzero(straddle)[0]:
+            span = z[jj+1] - z[jj]
+            f = 0.0 if span == 0 else (z0 - z[jj]) / span
+            row = {c: e_[c] for c in carry if c in e_.index}
+            row.update({
+                'x'         : x[jj] + f*(x[jj+1] - x[jj]),
+                'y'         : y[jj] + f*(y[jj+1] - y[jj]),
+                't'         : t[jj] + f*(t[jj+1] - t[jj]),
+                'kE'        : kE[jj] + f*(kE[jj+1] - kE[jj]),
+                'downstream': bool(span > 0),
+            })
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _kE_marker_size(v, lo, hi, smin, smax):
+    # Marker area proportional to log10(kE), mapped onto [smin, smax] over [lo, hi].
+    # kE spans many decades, so the area tracks the exponent rather than the value.
+    vv = np.clip(np.asarray(v, dtype=float), lo, hi)
+    frac = np.log10(vv/lo) / np.log10(hi/lo)
+    return smin + frac*(smax - smin)
+
+
+def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None,
+                 smin = 8., smax = 300., spectrum_bins = 50, notraj_alpha = 0.5):
+    # Particles crossing the plane z = z0: where they cross, and their kE spectrum.
+    #
+    # Left panel  -- x vs y at the crossing, the beam face seen looking downstream.
+    #   colour  : PDG ID (pdgid.pdgid_color_dict)
+    #   size    : area proportional to log10(kE), between smin and smax
+    #   filled  : crossing downstream (dz > 0);  open : upstream
+    #   alpha   : full for a real MCTrajectory, notraj_alpha for hasTrajectory == False
+    #             (those hold only start/end, so the crossing is interpolated on a
+    #             straight line and is not a tracked path)
+    # Right panel -- kE spectrum per PDG ID, log-log. Solid = MCTraj, dashed = NoTraj.
+    #
+    # dfe_ is any frame of trajectory entries (the whole df_traj, or one event).
+    # tags: restrict to these tags before plotting. The returned crossings frame keeps
+    # its 'tag' column either way, so callers can also split the result themselves.
+    if tags is not None and len(dfe_) and 'tag' in dfe_.columns:
+        dfe_ = dfe_[dfe_['tag'].isin(tags)]
+
+    dfx_ = find_z_crossings(dfe_, z0)
+
+    fig = plt.figure(figsize=(15, 6))
+    gs = GridSpec(1, 2, figure=fig, wspace=0.25, right=0.86)
+    ax_face = fig.add_subplot(gs[0, 0])
+    ax_spec = fig.add_subplot(gs[0, 1])
+
+    if not len(dfx_):
+        ax_face.text(0.5, 0.5, "no trajectory crosses z = %.1f mm" % z0,
+                     ha='center', va='center', transform=ax_face.transAxes)
+        if title is not None:
+            fig.suptitle(title, y=0.98)
+        return fig, ax_face, ax_spec, dfx_
+
+    kE = dfx_['kE'].values
+    positive = kE[kE > 0]
+    lo = kEmin if kEmin is not None else (positive.min() if len(positive) else 1e-3)
+    hi = kEmax if kEmax is not None else (positive.max() if len(positive) else 1.0)
+    if hi <= lo:
+        hi = lo*10.
+
+    bins = np.logspace(np.log10(lo), np.log10(hi), spectrum_bins+1)
+
+    legend_handles = []
+    for pdg in np.sort(dfx_['pdgId'].unique()):
+        d_ = dfx_[dfx_['pdgId'] == pdg]
+        try:
+            this_color = pdgid.pdgid_color_dict[pdg]
+        except KeyError:
+            this_color = 'yellow'
+        try:
+            this_label = pdgid.pdgid_dict[pdg]
+        except KeyError:
+            this_label = str(int(pdg))
+
+        # four combinations: down/up x real trajectory / start-end only
+        for real in (True, False):
+            alpha = 1.0 if real else notraj_alpha
+            sub = d_[d_['hasTrajectory'].astype(bool) == real]
+            if not len(sub):
+                continue
+            down = sub[sub['downstream'].astype(bool)]
+            up   = sub[~sub['downstream'].astype(bool)]
+            # filled = downstream, open = upstream
+            if len(down):
+                ax_face.scatter(down['x'], down['y'],
+                                s=_kE_marker_size(down['kE'].values, lo, hi, smin, smax),
+                                facecolors=this_color, edgecolors=this_color,
+                                linewidths=0.8, alpha=alpha)
+            if len(up):
+                ax_face.scatter(up['x'], up['y'],
+                                s=_kE_marker_size(up['kE'].values, lo, hi, smin, smax),
+                                facecolors='none', edgecolors=this_color,
+                                linewidths=0.8, alpha=alpha)
+
+        legend_handles.append(Line2D([0], [0], linestyle='none', marker='o',
+                                     color=this_color, markerfacecolor=this_color,
+                                     markersize=6, label=this_label))
+
+        # spectrum: log-spaced bins; solid for real trajectories, dashed for start/end
+        for real, style in ((True, '-'), (False, '--')):
+            k_ = d_[d_['hasTrajectory'].astype(bool) == real]['kE'].values
+            k_ = k_[k_ > 0]
+            if len(k_):
+                ax_spec.hist(k_, bins=bins, histtype='step', color=this_color,
+                             linestyle=style, alpha=1.0 if real else notraj_alpha)
+
+    # style keys, appended after the particle colours
+    legend_handles.append(Line2D([0], [0], linestyle='none', marker='o', color='grey',
+                                 markerfacecolor='grey', markersize=6, label='downstream'))
+    legend_handles.append(Line2D([0], [0], linestyle='none', marker='o', color='grey',
+                                 markerfacecolor='none', markersize=6, label='upstream'))
+    legend_handles.append(Line2D([0], [0], linestyle='none', marker='o', color='grey',
+                                 markerfacecolor='grey', markersize=6, label='MCTraj'))
+    legend_handles.append(Line2D([0], [0], linestyle='none', marker='o', color='grey',
+                                 markerfacecolor='grey', markersize=6,
+                                 alpha=notraj_alpha, label='NoTraj'))
+    leg = ax_face.legend(handles=legend_handles, loc="upper left",
+                         bbox_to_anchor=(1.02, 1.0), fontsize=8)
+
+    # second legend keying marker area to kE: low, geometric mid, high
+    ksamples = [lo, np.sqrt(lo*hi), hi]
+    size_handles = [
+        Line2D([0], [0], linestyle='none', marker='o', color='grey',
+               markerfacecolor='grey',
+               # Line2D markersize is a diameter in points; scatter s is an area
+               markersize=np.sqrt(_kE_marker_size(k, lo, hi, smin, smax)),
+               label="%.3g MeV" % k)
+        for k in ksamples
+    ]
+    ax_face.add_artist(leg)   # keep the first legend when the second is attached
+    ax_face.legend(handles=size_handles, loc="lower left", bbox_to_anchor=(1.02, 0.0),
+                   fontsize=8, labelspacing=1.4, title="kE", title_fontsize=8)
+
+    ax_face.set_xlabel("x [mm]")
+    ax_face.set_ylabel("y [mm]")
+    ax_face.set_aspect('equal')
+    ax_face.set_title("position at z = %.1f mm  (area ~ log10 kE)" % z0, fontsize=10)
+
+    ax_spec.set_xscale('log')
+    ax_spec.set_yscale('log')
+    ax_spec.set_xlabel("kE [MeV]")
+    ax_spec.set_ylabel("count")
+    ax_spec.set_title("kE spectrum at z = %.1f mm  (dashed: NoTraj)" % z0, fontsize=10)
+
+    if title is not None:
+        fig.suptitle(title, y=0.98)
+
+    return fig, ax_face, ax_spec, dfx_
+
+
 def draw_particle_tracer_event(dfe_, title = None, markstart = True):
     # Event display for the TTree written by Offline/STMMC/src/ParticleTracer_module.cc,
     # read in by portROOT2pd_particletracer.PortToDF. dfe_ holds the trajectory entries to

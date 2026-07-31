@@ -209,15 +209,54 @@ def chain_table_figure(dfc_, title, cols=None, figsize=(15, 6)):
     return fig
 
 
+# Planes at which the kE / position summary is drawn, in the order the pages appear.
+# VD101 is where the particles were seeded; the DS cryostat entrance is upstream of it.
+kE_planes = [
+    ("VD101",          constants.VD101_Z),
+    ("DS cryo start",  constants.ds_cryo_start_Z),
+]
+
+
+def draw_kE_pages(df_traj, pdf, planes=None, tags=None):
+    """One kE/position page per tag per plane. Returns the number of pages written."""
+    if planes is None:
+        planes = kE_planes
+    if tags is None:
+        tags = list(df_traj['tag'].unique()) if len(df_traj) else []
+
+    npage = 0
+    for tag in tags:
+        dft_ = df_traj[df_traj['tag'] == tag]
+        if not len(dft_):
+            continue
+        for zname, z0 in planes:
+            title = "[%s]  particles at %s (z = %.1f mm)" % (tag, zname, z0)
+            print(title)
+            fig, ax_face, ax_spec, dfx_ = plot_utils.draw_kE_at_z(dft_, z0, title)
+            print("    %i crossing(s)" % len(dfx_))
+            pdf.savefig(fig)
+            plt.close(fig)
+            npage += 1
+    return npage
+
+
 def draw(df_traj, sel, pdfname, nshow=-1, stride=1, print_chains=False):
-    """One PDF page per matched particle, walking its genealogy back to the primary."""
-    if not len(sel):
-        print("no matched particles selected; nothing to draw.")
+    """The summary pages, then one PDF page per matched particle with its genealogy."""
+    if not len(df_traj):
+        print("nothing read; no PDF written.")
         return 0
+    if not len(sel):
+        # still worth writing the per-tag summary pages, which come from df_traj
+        print("no matched particles selected; writing the summary pages only.")
 
     last = len(sel) if nshow < 0 else min(nshow*stride, len(sel))
     npage = 0
     with PdfPages(pdfname) as pdf:
+        # summary pages first: one per tag per plane, over every entry (not just the
+        # matched selection), so ancestors crossing the plane are counted too
+        print('===== kE / position at the summary planes =====')
+        npage += draw_kE_pages(df_traj, pdf)
+
         for ii in range(0, last, stride):
             seed_ = sel.iloc[ii]
             # seed first, then parent, grandparent, ... , primary last
