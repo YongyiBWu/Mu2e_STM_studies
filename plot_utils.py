@@ -579,18 +579,27 @@ def find_z_crossings(dfe_, z0):
 
         dz_prev = z[:-1] - z0
         dz_next = z[1:] - z0
-        # segments that straddle the plane; <=/>= catches a point sitting exactly on it
-        straddle = ((dz_prev <= 0) & (dz_next >= 0)) | ((dz_prev >= 0) & (dz_next <= 0))
+        # A segment crosses if its endpoints are on opposite sides. Half-open in dz_prev
+        # (strictly < or >) so a point sitting exactly on the plane is claimed only by
+        # the segment leaving it, not also by the one arriving -- otherwise one physical
+        # crossing would be counted twice.
+        straddle = ((dz_prev < 0) & (dz_next >= 0)) | ((dz_prev > 0) & (dz_next <= 0))
         for jj in np.nonzero(straddle)[0]:
             span = z[jj+1] - z[jj]
-            f = 0.0 if span == 0 else (z0 - z[jj]) / span
+            if span == 0:
+                continue      # segment lies in the plane; it has no crossing direction
+            f = (z0 - z[jj]) / span
             row = {c: e_[c] for c in carry if c in e_.index}
             row.update({
                 'x'         : x[jj] + f*(x[jj+1] - x[jj]),
                 'y'         : y[jj] + f*(y[jj+1] - y[jj]),
                 't'         : t[jj] + f*(t[jj+1] - t[jj]),
                 'kE'        : kE[jj] + f*(kE[jj+1] - kE[jj]),
-                'downstream': bool(span > 0),
+                # Points are stored in G4 step order (the module pushes traj.points() in
+                # sequence), so array order is time order and the sign of dz along the
+                # segment is the direction of travel. dt is checked rather than assumed:
+                # if the pair is out of time order, flip the sense.
+                'downstream': bool(span > 0) if t[jj+1] >= t[jj] else bool(span < 0),
             })
             rows.append(row)
     return pd.DataFrame(rows)
