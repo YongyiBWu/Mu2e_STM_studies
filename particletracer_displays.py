@@ -214,6 +214,7 @@ def chain_table_figure(dfc_, title, cols=None, figsize=(15, 6)):
 kE_planes = [
     ("VD101",          constants.VD101_Z),
     ("DS cryo start",  constants.ds_cryo_start_Z),
+    ("IFB end",        constants.IFB_end_Z),
 ]
 
 
