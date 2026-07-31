@@ -218,19 +218,24 @@ kE_planes = [
 
 
 def draw_kE_pages(df_traj, pdf, planes=None, tags=None):
-    """One kE/position page per tag per plane. Returns the number of pages written."""
+    """One kE/position page per plane per tag. Returns the number of pages written.
+
+    Grouped by plane: every tag at the first plane, then every tag at the next, so the
+    pages for one z sit together and are directly comparable.
+    """
     if planes is None:
         planes = kE_planes
     if tags is None:
         tags = list(df_traj['tag'].unique()) if len(df_traj) else []
 
     npage = 0
-    for tag in tags:
-        dft_ = df_traj[df_traj['tag'] == tag]
-        if not len(dft_):
-            continue
-        for zname, z0 in planes:
-            title = "[%s]  particles at %s (z = %.1f mm)" % (tag, zname, z0)
+    for zname, z0 in planes:
+        print("----- %s (z = %.1f mm) -----" % (zname, z0))
+        for tag in tags:
+            dft_ = df_traj[df_traj['tag'] == tag]
+            if not len(dft_):
+                continue
+            title = "%s (z = %.1f mm)  --  [%s]" % (zname, z0, tag)
             print(title)
             fig, ax_face, ax_spec, dfx_ = plot_utils.draw_kE_at_z(dft_, z0, title)
             print("    %i crossing(s)" % len(dfx_))
