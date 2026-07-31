@@ -596,10 +596,14 @@ def find_z_crossings(dfe_, z0):
     return pd.DataFrame(rows)
 
 
+kE_floor = 1e-3   # MeV; anything at or below this sizes as if it were exactly this
+
 def _kE_marker_size(v, lo, hi, smin, smax):
     # Marker area proportional to log10(kE), mapped onto [smin, smax] over [lo, hi].
     # kE spans many decades, so the area tracks the exponent rather than the value.
-    vv = np.clip(np.asarray(v, dtype=float), lo, hi)
+    # Values below kE_floor (and any zero/negative, which have no log) are pinned to it,
+    # so a thermal-energy particle still gets the smallest marker rather than vanishing.
+    vv = np.clip(np.asarray(v, dtype=float), max(lo, kE_floor), hi)
     frac = np.log10(vv/lo) / np.log10(hi/lo)
     return smin + frac*(smax - smin)
 
@@ -647,8 +651,11 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
 
     kE = dfx_['kE'].values
     positive = kE[kE > 0]
-    lo = kEmin if kEmin is not None else (positive.min() if len(positive) else 1e-3)
+    lo = kEmin if kEmin is not None else (positive.min() if len(positive) else kE_floor)
     hi = kEmax if kEmax is not None else (positive.max() if len(positive) else 1.0)
+    # do not let the scale run below the floor: everything there sizes the same anyway,
+    # and the decades underneath would otherwise eat the whole marker-size range
+    lo = max(lo, kE_floor)
     if hi <= lo:
         hi = lo*10.
 
