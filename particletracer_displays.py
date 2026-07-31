@@ -42,6 +42,7 @@ Examples:
 """
 from __future__ import print_function
 import sys
+import re
 import argparse
 
 # ROOT first and in batch mode: IgnoreCommandLineOptions keeps PyROOT from parsing our
@@ -166,26 +167,57 @@ def select(df_traj, tags=None, pdgids=None, positive_pz=False, pz_field='endPz')
     return sel
 
 
-def chain_table_figure(dfc_, title, cols=None):
+def chain_table_figure(dfc_, title, cols=None, figsize=(15, 6)):
     """Render the genealogy chain table as a monospace text page for the PDF.
 
-    The table is ~19 columns wide, so the font is scaled to the widest line to keep it
-    on the page instead of running off the right edge.
+    figsize matches plot_utils.draw_particle_tracer_event so the table page is the same
+    width as the display it follows (both are saved without bbox_inches='tight', which
+    would otherwise crop each page to its own content).
+
+    Floats are shown to 3 decimals to keep the line short, and the header is wrapped
+    over as many rows as it needs so a long column name does not widen the table.
     """
     if cols is None:
         cols = chaincols
-    text = dfc_[[c for c in cols if c in dfc_.columns]].to_string()
+    use = [c for c in cols if c in dfc_.columns]
+
+    # wrap the labels first, then 3 decimals: positions/times are the wide columns and
+    # full precision is not readable on a page anyway
+    text = _wrap_columns(dfc_[use]).to_string(float_format=lambda v: "%.3f" % v)
     lines = text.split("\n")
     width = max(len(l) for l in lines) if lines else 1
 
-    # landscape page; shrink the font until the widest line fits across it
-    fig = plt.figure(figsize=(15, 6))
-    # 0.60 of a point of width per character at 10pt, scaled to the page in inches
-    fontsize = min(10.0, 15.0 * 72.0 * 0.95 / (width * 0.60))
+    fig = plt.figure(figsize=figsize)
+    # ~0.60 em per character for monospace; fit the widest line across the page width
+    fontsize = min(10.0, figsize[0] * 72.0 * 0.95 / (width * 0.60))
     fig.text(0.01, 0.98, title + "\n\n" + text,
              family="monospace", fontsize=fontsize,
              va="top", ha="left")
     return fig
+
+
+def _wrap_columns(df_, minlen=9):
+    """Wrap the wide camelCase column labels over several header rows.
+
+    A label like 'hasTrajectory' is far wider than the True/False under it, so the label
+    alone sets that column's width. Splitting it at the capitals ('has' / 'Trajectory')
+    and joining with newlines lets pandas stack the label vertically and size the column
+    to its data instead.
+
+    Only labels of at least minlen characters are wrapped: the short ones do not drive
+    the table width, and breaking them reads worse than leaving them (startkE would
+    split as 'startk' / 'E', since the k of kE is not a word boundary).
+    """
+    ren = {}
+    for c in df_.columns:
+        name = str(c)
+        if len(name) < minlen:
+            continue
+        # break before each capital: hasTrajectory -> has / Trajectory
+        pieces = re.findall(r'[^A-Z]+|[A-Z][^A-Z]*', name)
+        if len(pieces) > 1:
+            ren[c] = "\n".join(pieces)
+    return df_.rename(columns=ren) if ren else df_
 
 
 def draw(df_traj, sel, pdfname, nshow=-1, stride=1, print_chains=False):
@@ -205,7 +237,9 @@ def draw(df_traj, sel, pdfname, nshow=-1, stride=1, print_chains=False):
             print('------------------------------------------------------------------------------')
             print(title)
             fig, ax_top, ax_side = plot_utils.draw_particle_tracer_event(dfc_, title)
-            pdf.savefig(fig, bbox_inches='tight')
+            # no bbox_inches='tight' here: it would crop each page to its own content,
+            # so the table page below would not line up with the display width
+            pdf.savefig(fig)
             plt.close(fig)
             npage += 1
             if print_chains:
