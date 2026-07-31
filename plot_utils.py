@@ -596,7 +596,7 @@ def find_z_crossings(dfe_, z0):
     return pd.DataFrame(rows)
 
 
-kE_floor = 1e-3   # MeV; anything at or below this sizes as if it were exactly this
+kE_floor = 0.1    # MeV; anything at or below this sizes as if it were exactly this
 
 def _kE_marker_size(v, lo, hi, smin, smax):
     # Marker area proportional to log10(kE), mapped onto [smin, smax] over [lo, hi].
@@ -724,19 +724,22 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     leg = ax_face.legend(handles=legend_handles, loc="upper left",
                          bbox_to_anchor=(1.02, 1.0), fontsize=8)
 
-    # second legend keying marker area to kE: low, geometric mid, high
+    # second legend keying marker area to kE: low, geometric mid, high. The smallest
+    # sample is the floor whenever the data reaches it, so label it as an upper bound --
+    # every particle at or below kE_floor is drawn at that one size.
     ksamples = [lo, np.sqrt(lo*hi), hi]
     size_handles = [
         Line2D([0], [0], linestyle='none', marker='o',
                markerfacecolor='grey', markeredgecolor='none', alpha=down_alpha,
                # Line2D markersize is a diameter in points; scatter s is an area
                markersize=np.sqrt(_kE_marker_size(k, lo, hi, smin, smax)),
-               label="%.3g MeV" % k)
+               label=("<= %.3g MeV" % k) if k <= kE_floor else ("%.3g MeV" % k))
         for k in ksamples
     ]
     ax_face.add_artist(leg)   # keep the first legend when the second is attached
     ax_face.legend(handles=size_handles, loc="lower left", bbox_to_anchor=(1.02, 0.0),
-                   fontsize=8, labelspacing=1.4, title="kE", title_fontsize=8)
+                   fontsize=8, labelspacing=1.4,
+                   title="kE (floor %.3g MeV)" % kE_floor, title_fontsize=8)
 
     if geometry:
         draw_Mu2e_faceview(ax_face)
