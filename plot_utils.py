@@ -541,8 +541,11 @@ def draw_particle_tracer_event(dfe_, title = None, markstart = True):
     # Dashed line: entry with no stored MCTrajectory (hasTrajectory==False), so only the
     #             SimParticle start and end positions are available.
     fig = plt.figure(figsize=(15, 6))
+    # right=0.88 leaves room for the legend, which is anchored outside the axes below.
+    # The figure is saved without bbox_inches='tight' (so every PDF page keeps the same
+    # width), and without this margin the legend would be clipped off the page.
     gs = GridSpec(5, 1, figure=fig,
-                  wspace=0.05, hspace=0.00)
+                  wspace=0.05, hspace=0.00, right=0.88)
 
     ax_top  = fig.add_subplot(gs[0:3]) # top view
     ax_side = fig.add_subplot(gs[3:], sharex=ax_top) # side view
@@ -582,9 +585,9 @@ def draw_particle_tracer_event(dfe_, title = None, markstart = True):
 
     # explain the two line styles alongside the particle colours
     legend_handles.append(Line2D([0], [0], linewidth=2, linestyle='-', color='grey',
-                                 label='MCTrajectory'))
+                                 label='MCTraj'))
     legend_handles.append(Line2D([0], [0], linewidth=2, linestyle='--', color='grey',
-                                 label='start/end only'))
+                                 label='NoTraj'))
 
     ax_top.legend(handles=legend_handles, loc="center left", bbox_to_anchor=(1.02, 0.5))
 
