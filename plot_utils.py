@@ -663,13 +663,21 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     positive = kE[kE > 0]
     lo = kEmin if kEmin is not None else (positive.min() if len(positive) else kE_floor)
     hi = kEmax if kEmax is not None else (positive.max() if len(positive) else 1.0)
-    # do not let the scale run below the floor: everything there sizes the same anyway,
-    # and the decades underneath would otherwise eat the whole marker-size range
-    lo = max(lo, kE_floor)
     if hi <= lo:
         hi = lo*10.
 
+    # Marker sizing is floored (everything below kE_floor draws at the smallest size,
+    # and the decades underneath would otherwise eat the whole size range) -- but the
+    # histogram must not be, or every crossing below the floor would fall outside the
+    # bin range and vanish from the spectrum. So bin over the full range and clamp only
+    # the size scale.
+    size_lo = max(lo, kE_floor)
+    size_hi = max(hi, size_lo*10.)
+
     bins = np.logspace(np.log10(lo), np.log10(hi), spectrum_bins+1)
+    # nudge the outermost edges so values sitting exactly on lo/hi are still counted
+    bins[0] *= (1. - 1e-9)
+    bins[-1] *= (1. + 1e-9)
 
     legend_handles = []
     peak = 0          # tallest histogram bar, decides whether the y axis goes log
@@ -696,13 +704,15 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
             # downstream: filled, but semi-transparent so overlapping markers show through
             if len(down):
                 ax_face.scatter(down['x'], down['y'],
-                                s=_kE_marker_size(down['kE'].values, lo, hi, smin, smax),
+                                s=_kE_marker_size(down['kE'].values, size_lo, size_hi,
+                                                  smin, smax),
                                 facecolors=this_color, edgecolors='none',
                                 alpha=down_alpha*amul)
             # upstream: outline only, no fill; same alpha as the downstream markers
             if len(up):
                 ax_face.scatter(up['x'], up['y'],
-                                s=_kE_marker_size(up['kE'].values, lo, hi, smin, smax),
+                                s=_kE_marker_size(up['kE'].values, size_lo, size_hi,
+                                                  smin, smax),
                                 facecolors='none', edgecolors=this_color,
                                 linewidths=1.0, alpha=down_alpha*amul)
 
@@ -766,6 +776,11 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     # each particle label carries its own (total/upstream/downstream).
     n_down_all = int(dfx_['downstream'].astype(bool).sum())
     legtitle = "%i crossings (u%i/d%i)" % (len(dfx_), len(dfx_) - n_down_all, n_down_all)
+    # a log x axis cannot place kE <= 0, so say so rather than letting the spectrum
+    # quietly hold fewer entries than the crossing count
+    n_nonpos = int((dfx_['kE'] <= 0).sum())
+    if n_nonpos:
+        legtitle += "\n(%i at kE<=0, not in spectrum)" % n_nonpos
     if weight is not None:
         # the plot shows raw crossings; these say what each one stands for, and what
         # they add up to once weighted -- the latter is the number comparable between
@@ -781,12 +796,12 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     # second legend keying marker area to kE: low, geometric mid, high. The smallest
     # sample is the floor whenever the data reaches it, so label it as an upper bound --
     # every particle at or below kE_floor is drawn at that one size.
-    ksamples = [lo, np.sqrt(lo*hi), hi]
+    ksamples = [size_lo, np.sqrt(size_lo*size_hi), size_hi]
     size_handles = [
         Line2D([0], [0], linestyle='none', marker='o',
                markerfacecolor='grey', markeredgecolor='none', alpha=down_alpha,
                # Line2D markersize is a diameter in points; scatter s is an area
-               markersize=np.sqrt(_kE_marker_size(k, lo, hi, smin, smax)),
+               markersize=np.sqrt(_kE_marker_size(k, size_lo, size_hi, smin, smax)),
                label=("<= %.3g MeV" % k) if k <= kE_floor else ("%.3g MeV" % k))
         for k in ksamples
     ]

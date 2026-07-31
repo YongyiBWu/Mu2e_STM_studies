@@ -227,7 +227,7 @@ def chain_table_figure(dfc_, title, cols=None, figsize=(15, 6)):
 # Planes at which the kE / position summary is drawn, in the order the pages appear.
 # VD101 is where the particles were seeded; the DS cryostat entrance is upstream of it.
 kE_planes = [
-    ("VD101",          constants.VD101_Z),
+    ("VD101",          constants.VD101_Z-0.1), # with safety offset
     ("DS cryo start",  constants.ds_cryo_start_Z),
     ("IFB end",        constants.IFB_end_Z),
 ]
