@@ -695,10 +695,12 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
                                 facecolors='none', edgecolors=this_color,
                                 linewidths=1.0, alpha=down_alpha*amul)
 
-        # swatch drawn the way the downstream markers are: filled, translucent, no rim
+        # swatch drawn the way the downstream markers are: filled, translucent, no rim.
+        # The label carries this PDG's crossing count, so the colours key both panels.
         legend_handles.append(Line2D([0], [0], linestyle='none', marker='o',
                                      markerfacecolor=this_color, markeredgecolor='none',
-                                     alpha=down_alpha, markersize=8, label=this_label))
+                                     alpha=down_alpha, markersize=8,
+                                     label="%s  (%i)" % (this_label, len(d_))))
 
         # spectrum: log-spaced bins; solid for real trajectories, dashed for start/end
         for real, style in ((True, '-'), (False, '--')):
@@ -759,6 +761,33 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     ax_spec.set_xlabel("kE [MeV]")
     ax_spec.set_ylabel("count")
     ax_spec.set_title("kE spectrum at z = %.1f mm" % z0, fontsize=10)
+
+    # crossing counts as a table: dstrm/ustrm against pdgId, with row and column totals.
+    # These count every crossing, including any at kE <= 0 that the log-x histogram
+    # cannot show, so the totals can exceed what the bars add up to.
+    down_mask = dfx_['downstream'].astype(bool)
+    pdgs = np.sort(dfx_['pdgId'].unique())
+    names = []
+    for pdg in pdgs:
+        try:
+            names.append(pdgid.pdgid_dict[pdg])
+        except KeyError:
+            names.append(str(int(pdg)))
+    namew = max([len(n) for n in names] + [5])   # 5 = len("total")
+
+    countlines = ["%-*s  %5s %5s %5s" % (namew, "", "dstrm", "ustrm", "total")]
+    for pdg, nm in zip(pdgs, names):
+        sel_ = (dfx_['pdgId'] == pdg)
+        nd = int((sel_ & down_mask).sum())
+        nu = int((sel_ & ~down_mask).sum())
+        countlines.append("%-*s  %5i %5i %5i" % (namew, nm, nd, nu, nd + nu))
+    countlines.append("%-*s  %5i %5i %5i"
+                      % (namew, "total", int(down_mask.sum()),
+                         int((~down_mask).sum()), len(dfx_)))
+    ax_spec.text(0.02, 0.98, "\n".join(countlines),
+                 transform=ax_spec.transAxes, fontsize=8, family='monospace',
+                 va='top', ha='left',
+                 bbox=dict(facecolor='white', edgecolor='grey', alpha=0.8))
 
     if title is not None:
         fig.suptitle(title, y=0.98)
