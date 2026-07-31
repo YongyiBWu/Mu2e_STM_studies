@@ -588,17 +588,22 @@ def _kE_marker_size(v, lo, hi, smin, smax):
 
 
 def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None,
-                 smin = 8., smax = 300., spectrum_bins = 50, notraj_alpha = 0.5):
+                 smin = 8., smax = 300., spectrum_bins = 50, notraj_alpha = 0.5,
+                 down_alpha = 0.5, xlim = (-8000., 0.), ylim = (-3500., 3500.)):
     # Particles crossing the plane z = z0: where they cross, and their kE spectrum.
     #
     # Left panel  -- x vs y at the crossing, the beam face seen looking downstream.
     #   colour  : PDG ID (pdgid.pdgid_color_dict)
     #   size    : area proportional to log10(kE), between smin and smax
-    #   filled  : crossing downstream (dz > 0);  open : upstream
-    #   alpha   : full for a real MCTrajectory, notraj_alpha for hasTrajectory == False
-    #             (those hold only start/end, so the crossing is interpolated on a
-    #             straight line and is not a tracked path)
+    #   filled  : crossing downstream (dz > 0), drawn at down_alpha so overlapping
+    #             markers stay readable;  outline only : upstream
+    #   alpha   : scaled by notraj_alpha for hasTrajectory == False (those hold only
+    #             start/end, so the crossing is interpolated on a straight line and is
+    #             not a tracked path)
     # Right panel -- kE spectrum per PDG ID, log-log. Solid = MCTraj, dashed = NoTraj.
+    #
+    # xlim/ylim default to the beam-face region: x as requested, y matching the side
+    # view drawn by draw_Mu2e_sideview so the two read on the same scale.
     #
     # dfe_ is any frame of trajectory entries (the whole df_traj, or one event).
     # tags: restrict to these tags before plotting. The returned crossings frame keeps
@@ -609,7 +614,8 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     dfx_ = find_z_crossings(dfe_, z0)
 
     fig = plt.figure(figsize=(15, 6))
-    gs = GridSpec(1, 2, figure=fig, wspace=0.25, right=0.86)
+    # right=0.84 reserves the strip the two legends occupy, to the right of ax_spec
+    gs = GridSpec(1, 2, figure=fig, wspace=0.25, right=0.84)
     ax_face = fig.add_subplot(gs[0, 0])
     ax_spec = fig.add_subplot(gs[0, 1])
 
@@ -641,25 +647,27 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
         except KeyError:
             this_label = str(int(pdg))
 
-        # four combinations: down/up x real trajectory / start-end only
+        # four combinations: down/up x real trajectory / start-end only.
+        # NoTraj is drawn fainter still, so the two effects multiply.
         for real in (True, False):
-            alpha = 1.0 if real else notraj_alpha
+            amul = 1.0 if real else notraj_alpha
             sub = d_[d_['hasTrajectory'].astype(bool) == real]
             if not len(sub):
                 continue
             down = sub[sub['downstream'].astype(bool)]
             up   = sub[~sub['downstream'].astype(bool)]
-            # filled = downstream, open = upstream
+            # downstream: filled, but semi-transparent so overlapping markers show through
             if len(down):
                 ax_face.scatter(down['x'], down['y'],
                                 s=_kE_marker_size(down['kE'].values, lo, hi, smin, smax),
-                                facecolors=this_color, edgecolors=this_color,
-                                linewidths=0.8, alpha=alpha)
+                                facecolors=this_color, edgecolors='none',
+                                alpha=down_alpha*amul)
+            # upstream: outline only, no fill at all
             if len(up):
                 ax_face.scatter(up['x'], up['y'],
                                 s=_kE_marker_size(up['kE'].values, lo, hi, smin, smax),
                                 facecolors='none', edgecolors=this_color,
-                                linewidths=0.8, alpha=alpha)
+                                linewidths=1.0, alpha=amul)
 
         legend_handles.append(Line2D([0], [0], linestyle='none', marker='o',
                                      color=this_color, markerfacecolor=this_color,
@@ -673,17 +681,19 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
                 ax_spec.hist(k_, bins=bins, histtype='step', color=this_color,
                              linestyle=style, alpha=1.0 if real else notraj_alpha)
 
-    # style keys, appended after the particle colours
+    # style keys, appended after the particle colours; these mirror how the markers
+    # are actually drawn -- filled+translucent downstream, outline-only upstream
     legend_handles.append(Line2D([0], [0], linestyle='none', marker='o', color='grey',
-                                 markerfacecolor='grey', markersize=6, label='downstream'))
-    legend_handles.append(Line2D([0], [0], linestyle='none', marker='o', color='grey',
-                                 markerfacecolor='none', markersize=6, label='upstream'))
-    legend_handles.append(Line2D([0], [0], linestyle='none', marker='o', color='grey',
-                                 markerfacecolor='grey', markersize=6, label='MCTraj'))
-    legend_handles.append(Line2D([0], [0], linestyle='none', marker='o', color='grey',
-                                 markerfacecolor='grey', markersize=6,
+                                 markerfacecolor='grey', markeredgecolor='none',
+                                 alpha=down_alpha, markersize=6, label='downstream'))
+    legend_handles.append(Line2D([0], [0], linestyle='none', marker='o',
+                                 markerfacecolor='none', markeredgecolor='grey',
+                                 markersize=6, label='upstream'))
+    legend_handles.append(Line2D([0], [0], linestyle='-', color='grey', label='MCTraj'))
+    legend_handles.append(Line2D([0], [0], linestyle='--', color='grey',
                                  alpha=notraj_alpha, label='NoTraj'))
-    leg = ax_face.legend(handles=legend_handles, loc="upper left",
+    # both legends sit to the right of the whole figure, clear of either panel
+    leg = ax_spec.legend(handles=legend_handles, loc="upper left",
                          bbox_to_anchor=(1.02, 1.0), fontsize=8)
 
     # second legend keying marker area to kE: low, geometric mid, high
@@ -696,20 +706,24 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
                label="%.3g MeV" % k)
         for k in ksamples
     ]
-    ax_face.add_artist(leg)   # keep the first legend when the second is attached
-    ax_face.legend(handles=size_handles, loc="lower left", bbox_to_anchor=(1.02, 0.0),
+    ax_spec.add_artist(leg)   # keep the first legend when the second is attached
+    ax_spec.legend(handles=size_handles, loc="lower left", bbox_to_anchor=(1.02, 0.0),
                    fontsize=8, labelspacing=1.4, title="kE", title_fontsize=8)
 
     ax_face.set_xlabel("x [mm]")
     ax_face.set_ylabel("y [mm]")
     ax_face.set_aspect('equal')
+    if xlim is not None:
+        ax_face.set_xlim(*xlim)
+    if ylim is not None:
+        ax_face.set_ylim(*ylim)
     ax_face.set_title("position at z = %.1f mm  (area ~ log10 kE)" % z0, fontsize=10)
 
     ax_spec.set_xscale('log')
     ax_spec.set_yscale('log')
     ax_spec.set_xlabel("kE [MeV]")
     ax_spec.set_ylabel("count")
-    ax_spec.set_title("kE spectrum at z = %.1f mm  (dashed: NoTraj)" % z0, fontsize=10)
+    ax_spec.set_title("kE spectrum at z = %.1f mm" % z0, fontsize=10)
 
     if title is not None:
         fig.suptitle(title, y=0.98)
