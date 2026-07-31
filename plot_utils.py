@@ -592,15 +592,15 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
                  down_alpha = 0.5, xlim = (-8000., 0.), ylim = (-3500., 3500.)):
     # Particles crossing the plane z = z0: where they cross, and their kE spectrum.
     #
-    # Left panel  -- x vs y at the crossing, the beam face seen looking downstream.
+    # Left panel  -- kE spectrum per PDG ID, log-log. Solid = MCTraj, dashed = NoTraj.
+    # Right panel -- x vs y at the crossing, the beam face seen looking downstream.
     #   colour  : PDG ID (pdgid.pdgid_color_dict)
     #   size    : area proportional to log10(kE), between smin and smax
     #   filled  : crossing downstream (dz > 0), drawn at down_alpha so overlapping
     #             markers stay readable;  outline only : upstream
-    #   alpha   : scaled by notraj_alpha for hasTrajectory == False (those hold only
-    #             start/end, so the crossing is interpolated on a straight line and is
-    #             not a tracked path)
-    # Right panel -- kE spectrum per PDG ID, log-log. Solid = MCTraj, dashed = NoTraj.
+    #   alpha   : down_alpha for both, scaled by notraj_alpha again when
+    #             hasTrajectory == False (those hold only start/end, so the crossing is
+    #             interpolated on a straight line and is not a tracked path)
     #
     # xlim/ylim default to the beam-face region: x as requested, y matching the side
     # view drawn by draw_Mu2e_sideview so the two read on the same scale.
@@ -614,14 +614,15 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
     dfx_ = find_z_crossings(dfe_, z0)
 
     fig = plt.figure(figsize=(15, 6))
-    # right=0.84 reserves the strip the two legends occupy, to the right of ax_spec
+    # spectrum on the left, beam face on the right; right=0.84 reserves the strip the
+    # two legends occupy, outboard of ax_face
     gs = GridSpec(1, 2, figure=fig, wspace=0.25, right=0.84)
-    ax_face = fig.add_subplot(gs[0, 0])
-    ax_spec = fig.add_subplot(gs[0, 1])
+    ax_spec = fig.add_subplot(gs[0, 0])
+    ax_face = fig.add_subplot(gs[0, 1])
 
     if not len(dfx_):
-        ax_face.text(0.5, 0.5, "no trajectory crosses z = %.1f mm" % z0,
-                     ha='center', va='center', transform=ax_face.transAxes)
+        ax_spec.text(0.5, 0.5, "no trajectory crosses z = %.1f mm" % z0,
+                     ha='center', va='center', transform=ax_spec.transAxes)
         if title is not None:
             fig.suptitle(title, y=0.98)
         return fig, ax_face, ax_spec, dfx_
@@ -662,16 +663,17 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
                                 s=_kE_marker_size(down['kE'].values, lo, hi, smin, smax),
                                 facecolors=this_color, edgecolors='none',
                                 alpha=down_alpha*amul)
-            # upstream: outline only, no fill at all
+            # upstream: outline only, no fill; same alpha as the downstream markers
             if len(up):
                 ax_face.scatter(up['x'], up['y'],
                                 s=_kE_marker_size(up['kE'].values, lo, hi, smin, smax),
                                 facecolors='none', edgecolors=this_color,
-                                linewidths=1.0, alpha=amul)
+                                linewidths=1.0, alpha=down_alpha*amul)
 
+        # swatch drawn the way the downstream markers are: filled, translucent, no rim
         legend_handles.append(Line2D([0], [0], linestyle='none', marker='o',
-                                     color=this_color, markerfacecolor=this_color,
-                                     markersize=6, label=this_label))
+                                     markerfacecolor=this_color, markeredgecolor='none',
+                                     alpha=down_alpha, markersize=8, label=this_label))
 
         # spectrum: log-spaced bins; solid for real trajectories, dashed for start/end
         for real, style in ((True, '-'), (False, '--')):
@@ -688,26 +690,27 @@ def draw_kE_at_z(dfe_, z0, title = None, tags = None, kEmin = None, kEmax = None
                                  alpha=down_alpha, markersize=6, label='downstream'))
     legend_handles.append(Line2D([0], [0], linestyle='none', marker='o',
                                  markerfacecolor='none', markeredgecolor='grey',
-                                 markersize=6, label='upstream'))
+                                 alpha=down_alpha, markersize=6, label='upstream'))
     legend_handles.append(Line2D([0], [0], linestyle='-', color='grey', label='MCTraj'))
     legend_handles.append(Line2D([0], [0], linestyle='--', color='grey',
                                  alpha=notraj_alpha, label='NoTraj'))
-    # both legends sit to the right of the whole figure, clear of either panel
-    leg = ax_spec.legend(handles=legend_handles, loc="upper left",
+    # both legends hang off ax_face, the right-hand panel, so they sit outboard of the
+    # whole figure rather than between the two plots
+    leg = ax_face.legend(handles=legend_handles, loc="upper left",
                          bbox_to_anchor=(1.02, 1.0), fontsize=8)
 
     # second legend keying marker area to kE: low, geometric mid, high
     ksamples = [lo, np.sqrt(lo*hi), hi]
     size_handles = [
-        Line2D([0], [0], linestyle='none', marker='o', color='grey',
-               markerfacecolor='grey',
+        Line2D([0], [0], linestyle='none', marker='o',
+               markerfacecolor='grey', markeredgecolor='none', alpha=down_alpha,
                # Line2D markersize is a diameter in points; scatter s is an area
                markersize=np.sqrt(_kE_marker_size(k, lo, hi, smin, smax)),
                label="%.3g MeV" % k)
         for k in ksamples
     ]
-    ax_spec.add_artist(leg)   # keep the first legend when the second is attached
-    ax_spec.legend(handles=size_handles, loc="lower left", bbox_to_anchor=(1.02, 0.0),
+    ax_face.add_artist(leg)   # keep the first legend when the second is attached
+    ax_face.legend(handles=size_handles, loc="lower left", bbox_to_anchor=(1.02, 0.0),
                    fontsize=8, labelspacing=1.4, title="kE", title_fontsize=8)
 
     ax_face.set_xlabel("x [mm]")
