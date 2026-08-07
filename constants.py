@@ -8,11 +8,13 @@ VD101_Y =      0.416
 VD101_Z =  40185.390
 VD101_R =  100.
 
+# HPGE
 hole1_X = -40.64 # w.r.t. beam center
 hole1_Y =   0.
 hole1_R = np.sqrt(150./np.pi)
 hole1_r = np.sqrt(50./np.pi)
 
+# LaBr3
 hole2_X =  40.64
 hole2_Y =   0.
 hole2_R = np.sqrt(150./np.pi)
