@@ -47,7 +47,6 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 
-import constants
 import pdgid
 import plot_utils
 import stm_analysis as A
@@ -60,6 +59,19 @@ from run_stm_scans import SCANS, DEFAULT_SCAN, get_scan, SOURCES
 STM_REGION = {
     'labr_x_min': -4000.0,
     'labr_z_min': 40900.0,
+}
+
+# The zoomed view: the STM shield house, in Mu2e coordinates [mm], from STM_v11. In z it
+# runs from the SSC front shield's poly block (about 540 mm upstream of the cradle front at
+# 40325.3) to the hall wall's inner face at 41351.2. In x it covers the front shielding,
+# from the left outer poly (about 830 mm on the -x side of the beam at -3904) to the right
+# wall (about 540 mm on the +x side). In y it covers the baseplate (236 mm below the bore)
+# up to the top courses. These bounds include a margin and are not exact outlines; change
+# them here if the geometry changes.
+SHIELD_HOUSE = {
+    'z': (39750.0, 41400.0),
+    'x': (-4800.0, -3300.0),
+    'y': (-450.0, 550.0),
 }
 
 
@@ -158,30 +170,44 @@ def draw_stm_region(ax_top, ax_side):
     ax_side.axvline(zmin, color='grey', linestyle='--', linewidth=0.8, alpha=0.7)
 
 
-def new_figure(title):
-    """The repo's two-panel layout: xz on top, yz below, sharing the z axis."""
-    fig = plt.figure(figsize=(15, 6))
-    gs = GridSpec(5, 1, figure=fig, wspace=0.05, hspace=0.00)
-    ax_top = fig.add_subplot(gs[0:3])
-    ax_side = fig.add_subplot(gs[3:], sharex=ax_top)
+def new_figure(title, zoom=True):
+    """The repo's two-panel layout: xz on top, yz below, sharing the z axis.
+
+    With zoom, both panels show only the shield house (SHIELD_HOUSE). Equal aspect on both
+    panels would let matplotlib shrink each box to a different width, so the two z axes
+    would no longer line up. Instead the aspect is left free and the panel heights and the
+    figure size are set from the x, y and z spans, which keeps the scale close to 1:1 while
+    the two boxes have exactly the same width.
+    """
+    if not zoom:
+        fig = plt.figure(figsize=(15, 6))
+        gs = GridSpec(5, 1, figure=fig, wspace=0.05, hspace=0.00)
+        ax_top = fig.add_subplot(gs[0:3])
+        ax_side = fig.add_subplot(gs[3:], sharex=ax_top)
+        plot_utils.draw_Mu2e_topview(ax_top)
+        plot_utils.draw_Mu2e_sideview(ax_side)
+        draw_stm_region(ax_top, ax_side)
+        fig.suptitle(title, y=0.93)
+        return fig, ax_top, ax_side
+
+    (zlo, zhi), (xlo, xhi), (ylo, yhi) = (SHIELD_HOUSE['z'], SHIELD_HOUSE['x'],
+                                          SHIELD_HOUSE['y'])
+    axes_w = 9.0                                    # inches of z axis
+    scale = axes_w / (zhi - zlo)                    # inches per mm, same on every axis
+    h_top, h_side = (xhi - xlo) * scale, (yhi - ylo) * scale
+    fig = plt.figure(figsize=(axes_w + 1.5, h_top + h_side + 1.2))
+    gs = GridSpec(2, 1, figure=fig, height_ratios=[h_top, h_side], hspace=0.0)
+    ax_top = fig.add_subplot(gs[0])
+    ax_side = fig.add_subplot(gs[1], sharex=ax_top)
     plot_utils.draw_Mu2e_topview(ax_top)
     plot_utils.draw_Mu2e_sideview(ax_side)
     draw_stm_region(ax_top, ax_side)
-    fig.suptitle(title, y=0.93)
+    for ax, (lo, hi) in ((ax_top, (xlo, xhi)), (ax_side, (ylo, yhi))):
+        ax.set_aspect('auto')
+        ax.set_xlim(zlo, zhi)
+        ax.set_ylim(lo, hi)
+    fig.suptitle(title)
     return fig, ax_top, ax_side
-
-
-def zoom_to_stm(ax_top, ax_side, margin=600.0):
-    """Restrict z to the STM neighbourhood.
-
-    The Mu2e-wide frame spans tens of metres, in which a back-trace inside the STM is a few
-    pixels. The y limits are left as the repo's helpers set them so the views stay
-    comparable with the rest of the displays.
-    """
-    zlo = constants.VD101_Z - margin
-    zhi = constants.VD101_Z + 910.0 + margin
-    ax_top.set_xlim(zlo, zhi)
-    ax_side.set_xlim(zlo, zhi)
 
 
 def draw_tracks(counts, gindex, g, ax_top, ax_side, max_tracks):
@@ -280,7 +306,8 @@ def main():
     ap.add_argument('--min-edep', type=float, default=None,
                     help='Drop counts whose TOTAL deposit is below this [MeV].')
     ap.add_argument('--no-zoom', action='store_true',
-                    help='Keep the full Mu2e z range instead of zooming to the STM.')
+                    help='Keep the full Mu2e frame instead of zooming to the STM shield '
+                         'house (SHIELD_HOUSE).')
     ap.add_argument('--output-root', default=None, help='Where the ROOT files live.')
     ap.add_argument('--tree-dir', default=A.TREE_DIR,
                     help='TFileService directory holding the trees, i.e. the analyzer '
@@ -331,11 +358,9 @@ def main():
                     print('  %s/%s: no counts, skipped' % (campaign, source))
                     continue
                 title = '%s  %s  %s  count origins' % (source, campaign, dtag)
-                fig, ax_top, ax_side = new_figure(title)
+                fig, ax_top, ax_side = new_figure(title, zoom=not args.no_zoom)
                 seen = draw_origins(counts, gindex, g, ax_top, ax_side)
                 legend_for(seen, ax_top)
-                if not args.no_zoom:
-                    zoom_to_stm(ax_top, ax_side)
                 out = os.path.join(args.outdir, '%s_%s_%s_%s_origins.%s'
                                    % (scan.name, campaign, source, dtag, args.format))
                 fig.savefig(out, dpi=150, bbox_inches='tight')
@@ -356,15 +381,13 @@ def main():
                     continue
                 title = ('%s  %s  %s  %s back-traces'
                          % (source, campaign, dtag, A.pdg_label(pdg)))
-                fig, ax_top, ax_side = new_figure(title)
+                fig, ax_top, ax_side = new_figure(title, zoom=not args.no_zoom)
                 seen, n_drawn = draw_tracks(counts, gindex, g, ax_top, ax_side,
                                             args.max_tracks)
                 if n_drawn == 0:
                     plt.close(fig)
                     continue
                 legend_for(seen, ax_top)
-                if not args.no_zoom:
-                    zoom_to_stm(ax_top, ax_side)
                 out = os.path.join(args.outdir, '%s_%s_%s_%s_pdg%d_tracks.%s'
                                    % (scan.name, campaign, source, dtag, pdg, args.format))
                 fig.savefig(out, dpi=150, bbox_inches='tight')
