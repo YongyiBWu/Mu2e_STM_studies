@@ -63,17 +63,22 @@ STM_REGION = {
 }
 
 
-def fetch_counts(frames, source=None, detector=None, pdg=None, max_rows=None):
+def fetch_counts(frames, source=None, campaign=None, detector=None, pdg=None,
+                 max_rows=None):
     """Count rows as a dict of numpy arrays, for the join into the genealogy.
 
     Keyed on (run, subRun, event, detector, groupId, cluster) - the tuple that identifies a
-    count and is the join key into ttree_genealogy.
+    count and is the join key into ttree_genealogy. Note the key does NOT include the
+    campaign, so rows from two campaigns can collide on it; selecting one campaign is what
+    keeps the join unambiguous.
     """
     cols = ['run', 'subRun', 'event', 'detector', 'groupId', 'cluster',
             'pdgId', 'E', 'time', 'x', 'y', 'z', 'startx', 'starty', 'startz', 'startE']
     out = {c: [] for c in cols}
-    for (src, _campaign), frame in frames.items():
+    for (src, camp), frame in frames.items():
         if source is not None and src != source:
+            continue
+        if campaign is not None and camp != campaign:
             continue
         node = frame
         if detector is not None:
@@ -93,13 +98,16 @@ def fetch_counts(frames, source=None, detector=None, pdg=None, max_rows=None):
     return merged
 
 
-def fetch_genealogy(gframes, source=None):
-    """Genealogy rows as a dict of numpy arrays, for one source."""
+def fetch_genealogy(gframes, source=None, campaign=None):
+    """Genealogy rows as a dict of numpy arrays, for one (source, campaign)."""
     cols = ['run', 'subRun', 'event', 'detector', 'groupId', 'cluster', 'depth',
+            'trackId', 'parentId',
             'pdgId', 'startx', 'starty', 'startz', 'endx', 'endy', 'endz']
     out = {c: [] for c in cols}
-    for (src, _campaign), frame in gframes.items():
+    for (src, camp), frame in gframes.items():
         if source is not None and src != source:
+            continue
+        if campaign is not None and camp != campaign:
             continue
         taken = {c: frame.Take['double' if c in ('startx', 'starty', 'startz',
                                                  'endx', 'endy', 'endz')
@@ -117,7 +125,12 @@ def key_of(d, i):
 
 
 def index_genealogy(g):
-    """{join key: [row indices]}, each list ordered by depth (parent first)."""
+    """{join key: [row indices]}, ordered shallowest first.
+
+    The rows of one key form a TREE, not a chain: a cluster's depositors share ancestors,
+    and the module records each particle once. The order here is only for readability;
+    draw_tree() uses trackId/parentId to find the edges.
+    """
     index = {}
     for i in range(len(g['run'])):
         index.setdefault(key_of(g, i), []).append(i)
@@ -172,7 +185,13 @@ def zoom_to_stm(ax_top, ax_side, margin=600.0):
 
 
 def draw_tracks(counts, gindex, g, ax_top, ax_side, max_tracks):
-    """One dotted chain per count: deposit -> ... -> origin. Returns the species seen."""
+    """Draw each count's genealogy TREE. Returns the species seen and how many were drawn.
+
+    One segment per particle, from where it was born to where it ended, coloured by its
+    species. Because the module records each particle of a cluster once, drawing every row
+    gives the tree with no edge repeated - no reconstruction from parentId is needed to
+    avoid overlap, though parentId is available for anything that needs the topology.
+    """
     seen = {}
     n_drawn = 0
     for i in range(len(counts['run'])):
@@ -183,23 +202,21 @@ def draw_tracks(counts, gindex, g, ax_top, ax_side, max_tracks):
         if not rows:
             continue
 
-        # Start at the deposit position, then walk outward through the ancestors. The
-        # segment INTO a vertex is coloured by the species that vertex belongs to, matching
-        # draw_neutron_event_backtrace.
-        last = (counts['x'][i], counts['y'][i], counts['z'][i])
         for r in rows:
             pdg = int(g['pdgId'][r])
             color = A.pdg_color(pdg)
             sx, sy, sz = g['startx'][r], g['starty'][r], g['startz'][r]
-            ax_top.add_line(Line2D([sz, last[2]], [sx, last[0]],
+            ex, ey, ez = g['endx'][r], g['endy'][r], g['endz'][r]
+            # start -> end of this particle: its own path, so branches meet at the vertex
+            # where the daughter was born rather than being chained end to end.
+            ax_top.add_line(Line2D([sz, ez], [sx, ex],
                                    linewidth=1.2, linestyle=':', color=color, alpha=0.8))
-            ax_side.add_line(Line2D([sz, last[2]], [sy, last[1]],
+            ax_side.add_line(Line2D([sz, ez], [sy, ey],
                                     linewidth=1.2, linestyle=':', color=color, alpha=0.8))
             ax_top.scatter(sz, sx, c=color, s=4)
             ax_side.scatter(sz, sy, c=color, s=4)
             seen.setdefault(pdg, 0)
             seen[pdg] += 1
-            last = (sx, sy, sz)
         n_drawn += 1
     return seen, n_drawn
 
@@ -214,8 +231,11 @@ def draw_origins(counts, gindex, g, ax_top, ax_side):
     for i in range(len(counts['run'])):
         key = key_of(counts, i)
         rows = gindex.get(key)
-        if rows:
-            r = rows[-1]              # deepest = root
+        # The root is the row with no parent, not the deepest: the rows form a tree, so the
+        # deepest is only the end of the longest branch.
+        root_rows = [r for r in (rows or []) if int(g['parentId'][r]) < 0]
+        if root_rows:
+            r = root_rows[0]
             pdg = int(g['pdgId'][r])
             ox, oy, oz = g['startx'][r], g['starty'][r], g['startz'][r]
         else:
@@ -288,64 +308,71 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
     campaigns = sorted({c for _s, c in frames})
-    tag = '_'.join(campaigns) if len(campaigns) <= 2 else '%dcampaigns' % len(campaigns)
     dtag = args.detector or 'both'
     sources = args.sources or [s for s, _ in SOURCES]
 
     print('scan %r, mode = %s, campaigns = %s' % (scan.name, args.mode, ', '.join(campaigns)))
 
-    for source in sources:
-        g = fetch_genealogy(gframes, source=source)
-        if not len(g['run']):
-            print('  %s: no genealogy rows, skipped' % source)
-            continue
-        gindex = index_genealogy(g)
-
-        if args.mode == 'origins':
-            counts = fetch_counts(frames, source=source, detector=detector)
-            if not len(counts['run']):
-                print('  %s: no counts, skipped' % source)
+    # One figure per (campaign, source, ...): a campaign is one geometry, and a track's
+    # path through the shielding is a property of it. The join key also omits the campaign,
+    # so mixing them could pair a count with another campaign's chain.
+    for campaign in campaigns:
+        for source in sources:
+            g = fetch_genealogy(gframes, source=source, campaign=campaign)
+            if not len(g['run']):
+                print('  %s/%s: no genealogy rows, skipped' % (campaign, source))
                 continue
-            title = '%s  %s  %s  count origins' % (source, tag, dtag)
-            fig, ax_top, ax_side = new_figure(title)
-            seen = draw_origins(counts, gindex, g, ax_top, ax_side)
-            legend_for(seen, ax_top)
-            if not args.no_zoom:
-                zoom_to_stm(ax_top, ax_side)
-            out = os.path.join(args.outdir, '%s_%s_%s_%s_origins.%s'
-                               % (scan.name, tag, source, dtag, args.format))
-            fig.savefig(out, dpi=150, bbox_inches='tight')
-            plt.close(fig)
-            print('  wrote %s  (%d counts)' % (out, len(counts['run'])))
-            continue
+            gindex = index_genealogy(g)
 
-        # tracks mode: one figure per species of the attributed particle.
-        species = A.species_present(frames, detector=detector,
-                                    min_counts=args.min_counts)
-        for pdg in species:
-            counts = fetch_counts(frames, source=source, detector=detector, pdg=pdg,
-                                  max_rows=args.max_tracks * 4)
-            if not len(counts['run']):
-                continue
-            title = ('%s  %s  %s  %s back-traces'
-                     % (source, tag, dtag, A.pdg_label(pdg)))
-            fig, ax_top, ax_side = new_figure(title)
-            seen, n_drawn = draw_tracks(counts, gindex, g, ax_top, ax_side,
-                                        args.max_tracks)
-            if n_drawn == 0:
+            if args.mode == 'origins':
+                counts = fetch_counts(frames, source=source, campaign=campaign,
+                                      detector=detector)
+                if not len(counts['run']):
+                    print('  %s/%s: no counts, skipped' % (campaign, source))
+                    continue
+                title = '%s  %s  %s  count origins' % (source, campaign, dtag)
+                fig, ax_top, ax_side = new_figure(title)
+                seen = draw_origins(counts, gindex, g, ax_top, ax_side)
+                legend_for(seen, ax_top)
+                if not args.no_zoom:
+                    zoom_to_stm(ax_top, ax_side)
+                out = os.path.join(args.outdir, '%s_%s_%s_%s_origins.%s'
+                                   % (scan.name, campaign, source, dtag, args.format))
+                fig.savefig(out, dpi=150, bbox_inches='tight')
                 plt.close(fig)
+                print('  wrote %s  (%d counts)' % (out, len(counts['run'])))
                 continue
-            legend_for(seen, ax_top)
-            if not args.no_zoom:
-                zoom_to_stm(ax_top, ax_side)
-            out = os.path.join(args.outdir, '%s_%s_%s_%s_pdg%d_tracks.%s'
-                               % (scan.name, tag, source, dtag, pdg, args.format))
-            fig.savefig(out, dpi=150, bbox_inches='tight')
-            plt.close(fig)
-            note = ''
-            if n_drawn >= args.max_tracks:
-                note = '  (capped at --max-tracks; not the whole sample)'
-            print('  wrote %s  (%d chains)%s' % (out, n_drawn, note))
+
+            # tracks mode: one figure per species of the attributed particle, chosen from this
+            # campaign so a species absent here gets no empty figure.
+            scoped = {k: v for k, v in frames.items() if k[1] == campaign}
+            species = A.species_present(scoped, detector=detector,
+                                        min_counts=args.min_counts)
+            for pdg in species:
+                counts = fetch_counts(frames, source=source, campaign=campaign,
+                                      detector=detector, pdg=pdg,
+                                      max_rows=args.max_tracks * 4)
+                if not len(counts['run']):
+                    continue
+                title = ('%s  %s  %s  %s back-traces'
+                         % (source, campaign, dtag, A.pdg_label(pdg)))
+                fig, ax_top, ax_side = new_figure(title)
+                seen, n_drawn = draw_tracks(counts, gindex, g, ax_top, ax_side,
+                                            args.max_tracks)
+                if n_drawn == 0:
+                    plt.close(fig)
+                    continue
+                legend_for(seen, ax_top)
+                if not args.no_zoom:
+                    zoom_to_stm(ax_top, ax_side)
+                out = os.path.join(args.outdir, '%s_%s_%s_%s_pdg%d_tracks.%s'
+                                   % (scan.name, campaign, source, dtag, pdg, args.format))
+                fig.savefig(out, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+                note = ''
+                if n_drawn >= args.max_tracks:
+                    note = '  (capped at --max-tracks; not the whole sample)'
+                print('  wrote %s  (%d chains)%s' % (out, n_drawn, note))
 
 
 if __name__ == '__main__':
