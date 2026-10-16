@@ -17,10 +17,12 @@ Geometry drawn
 --------------
 The Mu2e outlines come from plot_utils.draw_Mu2e_topview / draw_Mu2e_sideview, so these
 figures sit on the same frame as the rest of the repo's displays. On top of that, this
-script marks the STM detector region: the LaBr/HPGe split used by STMDetTree, plus a box
-around the crystals. Those bounds are read from the module's own defaults - see
-STM_REGION below - and are LOOSE region bounds, not tight crystal outlines; they are drawn
-to show where the split falls, not to represent the hardware.
+script outlines the STM hardware: the front shielding, the SSC, and the two crystals. The
+HPGe is rotated 45 degrees about Y, so it is drawn angled in the top view and square in the
+side view, matching constructSTM.cc.
+
+Those outlines are HAND-ENTERED estimates, not read from the geometry - see STM_ELEMENTS
+below for what is exact and what is not.
 
 Input
 -----
@@ -45,21 +47,60 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Polygon, Rectangle
 
 import pdgid
 import plot_utils
 import stm_analysis as A
 from run_stm_scans import SCANS, DEFAULT_SCAN, get_scan, SOURCES
 
-# The detector-split bounds STMDetTree applies: x > XMIN and z > ZMIN is LaBr, the rest is
-# HPGe. Kept in step with the module's LaBrRegionXMin / LaBrRegionZMin defaults - if those
-# are overridden in the fcl, override them here too or the drawn split will not be the one
-# the data was made with.
-STM_REGION = {
-    'labr_x_min': -4000.0,
-    'labr_z_min': 40900.0,
-}
+# ---------------------------------------------------------------------------
+# Hardware outlines drawn on the views.
+#
+# THESE ARE HAND-ENTERED, NOT READ FROM THE GEOMETRY. constructSTM.cc composes every
+# absolute z from STMShieldingRef and Front_T, which exist only at run time, so the z values
+# below are estimates anchored on VD101_Z; only the TRANSVERSE placement is reproduced
+# exactly, from the algebra in constructSTM.cc. Treat the outlines as a guide to where
+# things roughly are, and correct them against the geometry a campaign actually ran before
+# using them to argue about whether a track passed through something.
+# ---------------------------------------------------------------------------
+X_BEAM = -3904.0            # beam centre in x
+OFFSET_SPOT = 40.64         # stm.STM_SSC.offset_Spot: the two apertures about X_BEAM
+OFFSET_HPGE = -10.0         # stm.HPGe.offset_HPGe
+OFFSET_LABR = 0.0           # stm.LaBr.offset_LaBr
+
+HPGE_ANGLE_DEG = 45.0       # constructSTM.cc rotates the HPGe by rotateY(45 deg)
+HPGE_CRYSTAL_R = 36.05
+HPGE_CRYSTAL_L = 78.5
+LABR_CRYSTAL_R = 38.1
+LABR_CRYSTAL_L = 76.2
+
+# The HPGe crystal CENTRE is not at its aperture: constructSTM.cc places it a distance
+#   d = WindowD + AirD + Capsule_Windowthick + CrystalL/2
+# along the ROTATED axis from the face point, which at 45 degrees projects equally onto -x
+# and +z. The LaBr is unrotated, so its centre is simply its face point plus CrystalL/2 in z.
+_HPGE_FACE_TO_CENTRE = 1.5 + 4.0 + 0.03 + HPGE_CRYSTAL_L / 2.0        # 44.78 mm
+_HPGE_PROJ = _HPGE_FACE_TO_CENTRE * np.sqrt(2.0) / 2.0                # 31.66 mm
+
+# Each entry: (label, z_c, x_c, y_c, dz, dx, dy, angle_deg, colour). angle_deg is a rotation
+# about Y, so it tilts the TOP (z, x) view only - which is why the HPGe is angled in one
+# panel and square in the other.
+STM_ELEMENTS = [
+    ('Front shielding', 40395.0, X_BEAM, 0.0, 420.0, 700.0, 500.0, 0.0, 'tab:brown'),
+    ('SSC',             40645.0, X_BEAM, 0.0,  50.8, 180.0, 180.0, 0.0, 'tab:olive'),
+    ('HPGe',
+     40740.0 + _HPGE_PROJ,
+     X_BEAM - OFFSET_SPOT + OFFSET_HPGE - _HPGE_PROJ,
+     0.0,
+     HPGE_CRYSTAL_L, 2 * HPGE_CRYSTAL_R, 2 * HPGE_CRYSTAL_R,
+     HPGE_ANGLE_DEG, 'tab:red'),
+    ('LaBr',
+     40960.0 + LABR_CRYSTAL_L / 2.0,
+     X_BEAM + OFFSET_SPOT + OFFSET_LABR,
+     0.0,
+     LABR_CRYSTAL_L, 2 * LABR_CRYSTAL_R, 2 * LABR_CRYSTAL_R,
+     0.0, 'tab:blue'),
+]
 
 # The zoomed view: the STM shield house, in Mu2e coordinates [mm], from STM_v11. In z it
 # runs from the SSC front shield's poly block (about 540 mm upstream of the cradle front at
@@ -152,22 +193,28 @@ def index_genealogy(g):
 
 
 def draw_stm_region(ax_top, ax_side):
-    """Mark the LaBr/HPGe split and the STM detector region on both views.
+    """Outline the STM hardware on both views.
 
-    Drawn as the bounds the ANALYSIS uses, not as hardware: they are loose region bounds in
-    the empty space between the crystals, so a reader can see which side of the split a
-    track ended on.
+    A rotation about Y tilts the top (z, x) view only, so an element with a non-zero angle
+    is drawn as a rotated rectangle there and as a plain box in the side (z, y) view.
     """
-    zmin = STM_REGION['labr_z_min']
-    xmin = STM_REGION['labr_x_min']
-    # Top view (z, x): the LaBr quadrant is z > zmin AND x > xmin.
-    ax_top.axvline(zmin, color='grey', linestyle='--', linewidth=0.8, alpha=0.7)
-    ax_top.axhline(xmin, color='grey', linestyle='--', linewidth=0.8, alpha=0.7)
-    ax_top.text(zmin + 10, xmin + 40, 'LaBr', fontsize=7, color='grey')
-    ax_top.text(zmin - 250, xmin - 120, 'HPGe', fontsize=7, color='grey')
-    # Side view (z, y): only the z bound is meaningful; x does not appear on this axis, so
-    # drawing the x line here would assert a separation the view cannot show.
-    ax_side.axvline(zmin, color='grey', linestyle='--', linewidth=0.8, alpha=0.7)
+    for (label, zc, xc, yc, dz, dx, dy, angle, color) in STM_ELEMENTS:
+        # Corners computed here rather than via Rectangle(angle=..., rotation_point=...),
+        # which needs matplotlib >= 3.6; this works on any version and keeps the rotation
+        # visible.
+        half = np.array([[-dz / 2.0, -dx / 2.0], [dz / 2.0, -dx / 2.0],
+                         [dz / 2.0, dx / 2.0], [-dz / 2.0, dx / 2.0]])
+        a = np.radians(angle)
+        rot = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+        corners = half.dot(rot.T) + np.array([zc, xc])
+        ax_top.add_patch(Polygon(corners, closed=True, edgecolor=color,
+                                 facecolor='none', linewidth=1.2, zorder=3))
+        # The side (z, y) view is unaffected by a rotation about Y.
+        ax_side.add_patch(Rectangle((zc - dz / 2.0, yc - dy / 2.0), dz, dy,
+                                    edgecolor=color, facecolor='none',
+                                    linewidth=1.2, zorder=3))
+        ax_top.text(zc, corners[:, 1].max() + 15.0, label, fontsize=6, color=color,
+                    ha='center', va='bottom', zorder=3)
 
 
 def new_figure(title, zoom=True):
