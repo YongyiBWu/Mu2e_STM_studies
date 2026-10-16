@@ -110,6 +110,13 @@ def main():
     ap.add_argument('--min-edep', type=float, default=None,
                     help='Override MinEdep [MeV]. Cutting here cannot be undone downstream; '
                          'prefer cutting in the analysis.')
+    ap.add_argument('--labr-region-xmin', type=float, default=None,
+                    help='Override LaBrRegionXMin [mm]. Takes precedence over whatever the '
+                         'campaign declares, for a one-off check without editing the scan. '
+                         'The OLD geometry split at the beam centre, -3904.')
+    ap.add_argument('--labr-region-zmin', type=float, default=None,
+                    help='Override LaBrRegionZMin [mm]. Pair it with --labr-region-xmin; '
+                         'the old geometry had no z condition, so -1e9 reproduces it.')
     ap.add_argument('--keep-fcl', action='store_true',
                     help='Leave the generated temp fcl in place for inspection.')
     ap.add_argument('--dry-run', action='store_true',
@@ -145,6 +152,10 @@ def main():
             tail = f'   # {p.note}' if p.note else ''
             print(f'    {p.campaign:12s} {vals}{tail}')
             print(f'      catalogs: {scan.catalog_dir(p.campaign)}')
+            # The fcl overrides are the part most worth seeing before a run: the detector
+            # split in particular is silent when wrong.
+            for key, value in p.fcl.items():
+                print(f'      fcl: {key} = {value}')
         print(f'  output    : {output_dir}')
         return
 
@@ -211,16 +222,37 @@ def main():
             continue
         print(f'{catalog_file}: {nFiles} input files')
 
+        # Per-campaign fcl overrides, then the command-line ones. Order matters: a later
+        # fcl assignment wins, so a flag can override what the campaign declares - which is
+        # what makes --labr-region-* usable for a one-off check without editing the scan.
+        overrides = dict(point.fcl)
+        if args.no_genealogy:
+            overrides['physics.analyzers.STMDetTree.WriteGenealogy'] = 'false'
+        if args.group_by_top_parent:
+            overrides['physics.analyzers.STMDetTree.GroupByTopParentInDetector'] = 'true'
+        if args.min_edep is not None:
+            overrides['physics.analyzers.STMDetTree.MinEdep'] = args.min_edep
+        if args.labr_region_xmin is not None:
+            overrides['physics.analyzers.STMDetTree.LaBrRegionXMin'] = args.labr_region_xmin
+        if args.labr_region_zmin is not None:
+            overrides['physics.analyzers.STMDetTree.LaBrRegionZMin'] = args.labr_region_zmin
+
         tempfcl = f'temp_stmdettree_{scan.name}_{label}.fcl'
         with open(tempfcl, 'w') as f:
             f.write('#include "Offline/STMMC/fcl/STMDetTree.fcl"\n')
             f.write(f'services.TFileService.fileName: "{outfilename}"\n')
-            if args.no_genealogy:
-                f.write('physics.analyzers.STMDetTree.WriteGenealogy: false\n')
-            if args.group_by_top_parent:
-                f.write('physics.analyzers.STMDetTree.GroupByTopParentInDetector: true\n')
-            if args.min_edep is not None:
-                f.write(f'physics.analyzers.STMDetTree.MinEdep: {args.min_edep}\n')
+            for key, value in overrides.items():
+                f.write(f'{key}: {value}\n')
+
+        # The detector split decides which crystal every count is filed under, and a wrong
+        # one does not fail - it moves counts between columns. Print it so the log says what
+        # was actually applied rather than leaving it to the fcl.
+        split_keys = ('physics.analyzers.STMDetTree.LaBrRegionXMin',
+                      'physics.analyzers.STMDetTree.LaBrRegionZMin')
+        if any(k in overrides for k in split_keys):
+            shown = ', '.join('%s=%s' % (k.rsplit('.', 1)[1], overrides[k])
+                              for k in split_keys if k in overrides)
+            print(f'LaBr/HPGe split overridden: {shown}')
 
         cmd = ['mu2e', '-c', tempfcl, '-S', catalog_file]
         if args.max_events is not None:

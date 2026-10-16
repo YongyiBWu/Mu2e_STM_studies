@@ -73,12 +73,24 @@ class CampaignPoint:
     `campaign` is both the directory name and the field in every catalog name, so it is the
     identity of this point everywhere. `note` is free text for whatever the variables do not
     capture (a geometry file version, say) - it appears in listings only.
+
+    `fcl` is per-campaign fcl overrides the driver appends when processing this campaign,
+    as {key: value}. It exists because a campaign's GEOMETRY can require a different
+    ANALYSIS setting, and that pairing has to travel with the campaign rather than being
+    remembered at the command line. The motivating case is the detector split: STMDetTree
+    separates HPGe from LaBr with LaBrRegionXMin / LaBrRegionZMin, and an older geometry
+    needs the old split (x = -3904, z unrestricted) while the current one does not. Getting
+    that wrong does not fail - it silently files one crystal's counts under the other.
+
+    Values are written verbatim into the fcl, so quote strings yourself:
+        fcl={'physics.analyzers.STMDetTree.LaBrRegionXMin': -3904.0}
     """
 
-    def __init__(self, campaign, values, note=''):
+    def __init__(self, campaign, values, note='', fcl=None):
         self.campaign = campaign
         self.values = dict(values)
         self.note = note
+        self.fcl = dict(fcl or {})
 
     def get(self, key):
         return self.values.get(key)
@@ -274,16 +286,40 @@ BRICK_GAP_HOR = Variable('brick_gap_hor', 'Lead brick gap (horizontal)', 'mm')
 BRICK_GAP_VER = Variable('brick_gap_ver', 'Lead brick gap (vertical)', 'mm')
 PHYSICS_LIST = Variable('physics_list', 'Geant4 physics list', fmt='{}')
 
+# Detector-split overrides for the OLD geometry.
+#
+# STMDetTree assigns a step to LaBr when x > LaBrRegionXMin AND z > LaBrRegionZMin, and to
+# HPGe otherwise. The current defaults (-4000, 40900) place the boundary in the empty space
+# between the two crystals as that geometry arranges them. The older geometry split the two
+# at the beam centre with no z condition, which is what HPGeTree/LaBrTree always did, so a
+# campaign produced with it has to be analysed the same way:
+#
+#   LaBrRegionXMin : -3904.0   the beam centre, as HPGeTree's xBeamCentre
+#   LaBrRegionZMin : -1e9      effectively unbounded, so z never excludes anything
+#
+# Without this the z cut alone would push LaBr counts into the HPGe column, silently.
+OLD_GEOMETRY_SPLIT = {
+    'physics.analyzers.STMDetTree.LaBrRegionXMin': -3904.0,
+    'physics.analyzers.STMDetTree.LaBrRegionZMin': -1e9,
+}
+
 SCANS = {
     'old_geom_ssc_area': Scan(
         name='old_geom_ssc_area',
         variables=[OLD_GEOM_SSC_AREA],
         points=[
-            CampaignPoint('stmedep00', {'old_geom_ssc_area': 50.0}),
-            CampaignPoint('stmedep01', {'old_geom_ssc_area': 100.0}),
-            CampaignPoint('stmedep02', {'old_geom_ssc_area': 200.0}),
-            CampaignPoint('stmedep03', {'old_geom_ssc_area': 400.0}),
-            CampaignPoint('stmedep04', {'old_geom_ssc_area': 0.0}),
+            # Every campaign here is the OLD geometry, so each carries the old detector
+            # split; see OLD_GEOMETRY_SPLIT above for why it cannot be left to the default.
+            CampaignPoint('stmedep00', {'old_geom_ssc_area': 50.0},
+                          fcl=OLD_GEOMETRY_SPLIT),
+            CampaignPoint('stmedep01', {'old_geom_ssc_area': 100.0},
+                          fcl=OLD_GEOMETRY_SPLIT),
+            CampaignPoint('stmedep02', {'old_geom_ssc_area': 200.0},
+                          fcl=OLD_GEOMETRY_SPLIT),
+            CampaignPoint('stmedep03', {'old_geom_ssc_area': 400.0},
+                          fcl=OLD_GEOMETRY_SPLIT),
+            CampaignPoint('stmedep04', {'old_geom_ssc_area': 0.0},
+                          fcl=OLD_GEOMETRY_SPLIT),
         ],
     ),
 
@@ -291,15 +327,21 @@ SCANS = {
         name='old_geom_physics_list',
         variables=[OLD_GEOM_PHYSICS_LIST],
         points=[
+            # Both arms are the OLD geometry, so both carry the old detector split.
             # The existing EMZ campaign, reused as the baseline arm - no re-simulation
             # needed. Its SSC area must match the ShieldingM campaign's.
             CampaignPoint('stmedep00',
                           {'old_geom_physics_list': 'QGSP_BERT_EMZ'},
-                          note='nonIonE is identically 0 - no HP neutron transport'),
-            # The new campaign: same geometry, ShieldingM.
+                          fcl=OLD_GEOMETRY_SPLIT),
+            # Same geometry, ShieldingM. This arm was run expecting it would populate
+            # nonIonE; it does NOT - no standard process calls SetNonIonizingEnergyDeposit,
+            # and HP neutron physics does no NIEL partitioning. What it DOES give is a real
+            # physics-list systematic on the neutron-induced count rate and ionizing energy,
+            # which is why the scan is still worth plotting.
             CampaignPoint('stmedep05',
                           {'old_geom_physics_list': 'ShieldingM'},
-                          note='Mu2e default list; HP neutrons, so nonIonE is populated'),
+                          note='HP neutrons; nonIonE still 0 - see the comment above',
+                          fcl=OLD_GEOMETRY_SPLIT),
         ],
     ),
 
