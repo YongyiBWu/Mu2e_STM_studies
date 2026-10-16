@@ -57,19 +57,52 @@ from run_stm_scans import SCANS, DEFAULT_SCAN, get_scan, SOURCES
 # ---------------------------------------------------------------------------
 # Hardware outlines drawn on the views.
 #
-# THESE ARE HAND-ENTERED, NOT READ FROM THE GEOMETRY. constructSTM.cc composes every
-# absolute z from STMShieldingRef and Front_T, which exist only at run time, so the z values
-# below are estimates anchored on VD101_Z; only the TRANSVERSE placement is reproduced
-# exactly, from the algebra in constructSTM.cc. Treat the outlines as a guide to where
-# things roughly are, and correct them against the geometry a campaign actually ran before
-# using them to argue about whether a track passed through something.
+# Anchored on STMShieldingRef, the FRONT FACE OF THE STEEL SUPPORT CRADLE, which STM_v11.txt
+# fixes absolutely: VD101 sits 15 mm upstream of it at z = 40310.29, so the reference is
+# 40325.29. Everything else is placed from there with the thicknesses the geometry file
+# gives, so the layout follows the geometry rather than being eyeballed.
+#
+# NOT read from the geometry at run time, though - constructSTM.cc composes these at
+# construction, and constants.VD101_Z in this repo is a STALE position from before the
+# detector moved, so it is deliberately not used here. Re-derive STM_SHIELDING_REF if the
+# cradle moves again.
 # ---------------------------------------------------------------------------
 X_BEAM = -3904.0            # beam centre in x
 OFFSET_SPOT = 40.64         # stm.STM_SSC.offset_Spot: the two apertures about X_BEAM
 OFFSET_HPGE = -10.0         # stm.HPGe.offset_HPGe
 OFFSET_LABR = 0.0           # stm.LaBr.offset_LaBr
 
-HPGE_ANGLE_DEG = 45.0       # constructSTM.cc rotates the HPGe by rotateY(45 deg)
+# The z anchor. STM_v11.txt puts VD101 15 mm upstream of the cradle front, at 40310.29.
+STM_SHIELDING_REF = 40310.29 + 15.0                   # 40325.29, the cradle's front face
+WALL_TO_CRADLE_GAP = 1.200                            # stm.FrontShieldingRight.wallToCradleGap
+FRONT_SHIELD_DZ = 203.200                             # 2+1+2+1+2 in of layers
+SIDE_WALL_DZ = 609.600                                # 24 in
+
+SHIELD_HOUSE_Z0 = STM_SHIELDING_REF + WALL_TO_CRADLE_GAP
+# Front_T in constructSTM.cc: the back face of the front shielding, which every detector z
+# is measured from.
+FRONT_T = SHIELD_HOUSE_Z0 + FRONT_SHIELD_DZ
+
+# Transverse extent of the shield house, about the beam centre.
+SHIELD_X_MIN = X_BEAM - 418.864                       # stm.RightShielding.Right_Xmax
+SHIELD_X_MAX = X_BEAM + 130.556                       # stm.LeftShielding.Left_Xmin
+SHIELD_DY = 508.0                                     # room height
+
+# SSC, centred at Wdepth_f/2 + ZGap - ZGapBack from the reference.
+SSC_WDEPTH_F, SSC_ZGAP, SSC_ZGAP_BACK = 50.8, 8.70, 4.35
+SSC_DZ = 101.6                                        # Wdepth_f + Wdepth_b
+
+# Detector standoffs from FRONT_T. NOTE these are the STM_v11 values; v09 used
+# Z_LaBr = 330.0 and Z_HPGe = 63.131, so outlines drawn over a v09 campaign sit ~20 mm and
+# ~13 mm downstream of where that geometry actually put the crystals.
+Z_LABR = 310.0              # stm.LaBr.Z_LaBr
+Z_HPGE = 50.431             # stm.HPGe.Z_HPGe
+
+# constructSTM.cc rotates the HPGe by rotateY(45 deg). The sign here is fixed by the
+# placement, not by the G4 convention: the crystal centre sits at -proj in x and +proj in z
+# from its aperture, so the long axis tilts toward -x as z increases. In the (z, x) top view
+# a positive angle turns +z toward +x, so that is -45.
+HPGE_ANGLE_DEG = -45.0
 HPGE_CRYSTAL_R = 36.05
 HPGE_CRYSTAL_L = 78.5
 LABR_CRYSTAL_R = 38.1
@@ -85,17 +118,33 @@ _HPGE_PROJ = _HPGE_FACE_TO_CENTRE * np.sqrt(2.0) / 2.0                # 31.66 mm
 # Each entry: (label, z_c, x_c, y_c, dz, dx, dy, angle_deg, colour). angle_deg is a rotation
 # about Y, so it tilts the TOP (z, x) view only - which is why the HPGe is angled in one
 # panel and square in the other.
+# Listed outermost first so the house draws behind what it contains.
 STM_ELEMENTS = [
-    ('Front shielding', 40395.0, X_BEAM, 0.0, 420.0, 700.0, 500.0, 0.0, 'tab:brown'),
-    ('SSC',             40645.0, X_BEAM, 0.0,  50.8, 180.0, 180.0, 0.0, 'tab:olive'),
+    ('Shield house',
+     SHIELD_HOUSE_Z0 + (FRONT_SHIELD_DZ + SIDE_WALL_DZ) / 2.0,
+     (SHIELD_X_MIN + SHIELD_X_MAX) / 2.0,
+     0.0,
+     FRONT_SHIELD_DZ + SIDE_WALL_DZ, SHIELD_X_MAX - SHIELD_X_MIN, SHIELD_DY,
+     0.0, 'dimgrey'),
+    ('Front shielding',
+     SHIELD_HOUSE_Z0 + FRONT_SHIELD_DZ / 2.0,
+     (SHIELD_X_MIN + SHIELD_X_MAX) / 2.0,
+     0.0,
+     FRONT_SHIELD_DZ, SHIELD_X_MAX - SHIELD_X_MIN, SHIELD_DY,
+     0.0, 'tab:brown'),
+    ('SSC',
+     STM_SHIELDING_REF + SSC_WDEPTH_F / 2.0 + SSC_ZGAP - SSC_ZGAP_BACK,
+     X_BEAM, 0.0,
+     SSC_DZ, 177.8, 177.8,                            # W_middle, W_height
+     0.0, 'tab:olive'),
     ('HPGe',
-     40740.0 + _HPGE_PROJ,
+     FRONT_T + Z_HPGE + _HPGE_PROJ,
      X_BEAM - OFFSET_SPOT + OFFSET_HPGE - _HPGE_PROJ,
      0.0,
      HPGE_CRYSTAL_L, 2 * HPGE_CRYSTAL_R, 2 * HPGE_CRYSTAL_R,
      HPGE_ANGLE_DEG, 'tab:red'),
     ('LaBr',
-     40960.0 + LABR_CRYSTAL_L / 2.0,
+     FRONT_T + Z_LABR + 1.5 + 4.0 + LABR_CRYSTAL_L / 2.0,   # WindowD + AirD + L/2
      X_BEAM + OFFSET_SPOT + OFFSET_LABR,
      0.0,
      LABR_CRYSTAL_L, 2 * LABR_CRYSTAL_R, 2 * LABR_CRYSTAL_R,
