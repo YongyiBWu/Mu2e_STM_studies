@@ -19,13 +19,16 @@ Geant4 step. See the STMDetTree module header. The spectrum is therefore a per-p
 spectrum, which is what a real spectrum is, rather than a per-step one. This is the main
 difference from edep_plot.py's output and the reason the two are not directly comparable.
 
+One figure per (campaign, detector)
+-----------------------------------
+A campaign is one geometry, so campaigns are never combined into a figure - these shapes are
+a property of the configuration. Sources within a campaign ARE combined, being different
+processes in the same beam; --split source separates them.
+
 Axes are COUNTS, not rates
 --------------------------
-Unlike plot_scan_rates.py these panels are raw counts per bin. A rate needs the POT
-normalization, which is per (source, campaign) - and these figures deliberately sum whatever
-was selected, possibly several campaigns at different configurations. The totals printed
-alongside always describe exactly what was summed; --single-campaign refuses the ambiguous
-case outright.
+Unlike plot_scan_rates.py these panels are raw counts per bin, for the campaign named in the
+title. Use the scan plots to compare configurations.
 
 Run as:
     python plot_edep_summary.py                              # default scan, all sources
@@ -37,7 +40,6 @@ from __future__ import print_function
 
 import argparse
 import os
-import sys
 
 import numpy as np
 import matplotlib
@@ -68,13 +70,20 @@ def fetch(frame, cut, use_total):
     return np.asarray(times.GetValue()), np.asarray(energies.GetValue())
 
 
-def gather(frames, detector, split, min_counts, use_total=False):
-    """[(label, color, times, energies), ...] for one detector.
+def gather(frames, detector, split, min_counts, only_campaign, use_total=False):
+    """[(label, color, times, energies), ...] for one detector of ONE campaign.
+
+    Restricted to a single campaign because a campaign is one geometry: overlaying two of
+    them would put unrelated configurations in the same histogram, and the resulting shape
+    would describe neither. Sources within a campaign DO belong together - they are
+    different processes in the same beam - which is why only the campaign axis is fixed
+    here.
 
     Selections are resolved first and every Take booked before any is read, so each file is
     traversed once regardless of how many series draw from it.
     """
     det_cut = A.detector_cut(detector)
+    scoped = {k: v for k, v in frames.items() if k[1] == only_campaign}
 
     if split == 'none':
         selections = [('all', None, A.BATCH_COLOR_DICT['1-batch'])]
@@ -82,13 +91,17 @@ def gather(frames, detector, split, min_counts, use_total=False):
         selections = [(src, None, A.SOURCE_COLOR_DICT.get(src, 'grey'))
                       for src, _ in SOURCES]
     else:
-        species = A.species_present(frames, detector=detector, min_counts=min_counts)
+        # Species chosen from THIS campaign, so a rare species in one configuration does
+        # not get a curve in another where it never appears.
+        species = A.species_present(scoped, detector=detector, min_counts=min_counts)
         selections = [(A.pdg_label(p), A.pdg_cut(p), A.pdg_color(p)) for p in species]
 
     out = []
     for label, extra_cut, color in selections:
         times, energies = [], []
-        for (source, _campaign), frame in frames.items():
+        for (source, campaign), frame in frames.items():
+            if campaign != only_campaign:
+                continue
             if split == 'source' and source != label:
                 continue
             cut = det_cut if extra_cut is None else '(%s) && (%s)' % (det_cut, extra_cut)
@@ -183,9 +196,6 @@ def main():
                          'series per source or per attributed species.')
     ap.add_argument('--sources', nargs='*', help='Restrict to these sources.')
     ap.add_argument('--campaigns', nargs='*', help='Restrict to these campaigns.')
-    ap.add_argument('--single-campaign', action='store_true',
-                    help='Refuse to run when the selection spans several campaigns, which '
-                         'would sum different configurations into one figure.')
     ap.add_argument('--use-total-energy', action='store_true',
                     help='Use ionizing + non-ionizing instead of ionizing alone. No effect '
                          'in practice - nonIonE is structurally 0, see stm_analysis.')
@@ -209,30 +219,29 @@ def main():
                          directory=args.tree_dir, verbose=args.verbose)
 
     campaigns = sorted({c for _s, c in frames})
-    if args.single_campaign and len(campaigns) > 1:
-        raise SystemExit(
-            '--single-campaign given but the selection spans %d campaigns (%s). Pass '
-            '--campaigns to pick one.' % (len(campaigns), ', '.join(campaigns)))
-    if len(campaigns) > 1:
-        print('NOTE: summing %d campaigns (%s). These are different configurations, so read '
-              'shapes rather than absolute numbers.'
-              % (len(campaigns), ', '.join(campaigns)), file=sys.stderr)
 
     os.makedirs(args.outdir, exist_ok=True)
-    tag = '_'.join(campaigns) if len(campaigns) <= 2 else '%dcampaigns' % len(campaigns)
     suffix = '' if args.split == 'none' else '_by%s' % args.split
     print('scan %r, split = %s, campaigns = %s'
           % (scan.name, args.split, ', '.join(campaigns)))
 
-    for detector, dname in A.DETECTORS:
-        series = gather(frames, detector, args.split, args.min_counts,
-                        args.use_total_energy)
-        title = '%s  %s' % (dname, tag)
-        if args.split != 'none':
-            title += '  by %s' % args.split
-        out = os.path.join(args.outdir, '%s_%s_%s_summary%s.%s'
-                           % (scan.name, tag, dname, suffix, args.format))
-        draw(series, detector, title, out)
+    # One figure per (campaign, detector): a campaign is one geometry, and these shapes are
+    # a property of that configuration. Use the scan plots to compare across configurations.
+    for campaign in campaigns:
+        values = next((p.values for p in scan.points if p.campaign == campaign), {})
+        config = ', '.join('%s=%s' % (k, scan.variable(k).value_label(v))
+                           for k, v in sorted(values.items()))
+        for detector, dname in A.DETECTORS:
+            series = gather(frames, detector, args.split, args.min_counts,
+                            campaign, args.use_total_energy)
+            title = '%s  %s' % (dname, campaign)
+            if config:
+                title += '  (%s)' % config
+            if args.split != 'none':
+                title += '  by %s' % args.split
+            out = os.path.join(args.outdir, '%s_%s_%s_summary%s.%s'
+                               % (scan.name, campaign, dname, suffix, args.format))
+            draw(series, detector, title, out)
 
 
 if __name__ == '__main__':
