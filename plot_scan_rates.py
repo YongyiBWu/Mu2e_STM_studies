@@ -79,15 +79,17 @@ def collect(frames, scan, xkey, detector, split, batches):
 
     det_cut = A.detector_cut(detector)
 
-    # Book first: (campaign, selection label) -> lazy results, plus the per-point file count
-    # that the rate denominator needs.
+    # Book first: (campaign, selection) -> one lazy result PER SOURCE FILE.
+    #
+    # Results stay per-file because each source file represents 1e12 POT of the FULL beam.
+    # Ele, Mu, 1809 and Neutrals are different physics processes occurring simultaneously in
+    # the same beam, so each is normalized to its own 1e12 POT and the resulting RATES are
+    # summed.
     booked = {}
-    file_counts = {}
     for point in scan.points_sorted_by(xkey):
         for (sel_key, sel_label, sel_cut) in selections:
             key = (point.campaign, sel_key)
             booked[key] = []
-            n_files = 0
             for (source, campaign), frame in frames.items():
                 if campaign != point.campaign:
                     continue
@@ -95,37 +97,34 @@ def collect(frames, scan, xkey, detector, split, batches):
                     continue
                 cut = det_cut if sel_cut is None else '(%s) && (%s)' % (det_cut, sel_cut)
                 booked[key].append(A.book(frame, cut))
-                n_files += 1
-            file_counts[key] = n_files
 
     # Read: one event loop per file, covering everything booked on it above.
     totals = {}
     for key, entries in booked.items():
-        n_total, sums_total = 0, {'E': 0.0, 'nonIonE': 0.0}
-        for n, sums in A.materialize(entries):
-            n_total += n
-            for c in sums_total:
-                sums_total[c] += sums[c]
-        totals[key] = (n_total, sums_total)
+        totals[key] = A.materialize(entries)
 
-    return selections, totals, file_counts
+    return selections, totals
 
 
-def build_curves(scan, xkey, selections, totals, file_counts, quantity_fn, batches, split):
-    """(label, color, marker, xs, ys) per curve, from the materialized totals."""
+def build_curves(scan, xkey, selections, totals, quantity_fn, batches, split):
+    """(label, color, marker, xs, ys) per curve, from the materialized totals.
+
+    Each source file is normalized to its own 1e12 POT and the rates are then added, so a
+    point is the total rate the whole beam produces at that configuration.
+    """
     curves = []
     for sel_key, sel_label, _ in selections:
         for batch in batches:
             xs, ys = [], []
             for point in scan.points_sorted_by(xkey):
                 key = (point.campaign, sel_key)
-                n_files = file_counts.get(key, 0)
-                if n_files == 0:
+                per_file = totals.get(key)
+                if not per_file:
                     continue   # campaign absent: leave a gap, do not plot a zero
-                n, sums = totals[key]
-                raw = quantity_fn(n, sums)
+                y = sum(A.to_kcps(quantity_fn(n, sums), batch, n_files=1)
+                        for n, sums in per_file)
                 xs.append(point.get(xkey))
-                ys.append(A.to_kcps(raw, batch, n_files=n_files))
+                ys.append(y)
             if not xs or not any(ys):
                 continue
 
@@ -243,10 +242,10 @@ def main():
 
     suffix = '' if args.split == 'none' else '_by%s' % args.split
     for detector, dname in A.DETECTORS:
-        selections, totals, file_counts = collect(
+        selections, totals = collect(
             frames, scan, xkey, detector, args.split, batches)
         for qkey, ylabel, qfn in QUANTITIES:
-            curves = build_curves(scan, xkey, selections, totals, file_counts,
+            curves = build_curves(scan, xkey, selections, totals,
                                   qfn, batches, args.split)
             out = os.path.join(args.outdir, '%s_%s_%s%s.%s'
                                % (scan.name, qkey, dname, suffix, args.format))

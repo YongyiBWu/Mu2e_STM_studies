@@ -109,11 +109,16 @@ def pdg_color(pdg, fallback='yellow'):
 # ---------------------------------------------------------------------------
 
 def to_kcps(value, batch, n_files=1, pot_per_file=POT_PER_FILE):
-    """counts (or summed MeV) over n_files -> kcps (or MeV*kcps) at a beam intensity.
+    """counts (or summed MeV) from ONE source file -> kcps (or MeV*kcps) at an intensity.
 
-    n_files matters whenever several files are summed into one point: each stands for
-    pot_per_file, so the denominator grows with the number of files. Getting this wrong is
-    the most likely way a rate comes out off by an integer factor.
+    To combine sources, normalize each file separately and ADD the rates. Every source file
+    represents pot_per_file of the FULL beam - Ele, Mu, 1809 and Neutrals are different
+    processes occurring together in the same beam, not repeated samples of one thing - so
+    summing their counts and dividing by the file count understates the answer by that
+    factor.
+
+    n_files > 1 is therefore only for genuinely repeated running of the SAME source, where
+    the statistics do accumulate over a larger POT.
     """
     if batch not in BATCHES:
         raise KeyError('Unknown batch %r. Known: %s' % (batch, ', '.join(BATCHES)))
