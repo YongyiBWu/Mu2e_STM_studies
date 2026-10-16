@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Requirements 1 and 2: rate and energy rate against a scanned variable.
 
-Three quantities per detector, each against the scan's x variable:
+Two quantities per detector, each against the scan's x variable:
     rate                 [kcps]
     ionizing energy rate [MeV*kcps]
-    non-ionizing rate    [MeV*kcps]     (see the NIEL caveat below)
 
 and each in three breakdowns:
     --split none      one curve per beam intensity        (the reference figure)
@@ -14,9 +13,8 @@ and each in three breakdowns:
 Normalization is in stm_analysis.py: each file is 1e12 POT, scaled to 9.3e12 (1-batch) or
 2.3e13 (2-batch) POT/s and divided by 1000 for kcps.
 
-The non-ionizing caveat: under QGSP_BERT_EMZ - the STM convention - Geant4 never populates
-nonIonizingEDep, so that plot is a flat zero. The script says so rather than letting a null
-result look like a measurement. Run the physics_list scan for numbers that mean something.
+There is no non-ionizing plot: Geant4 never populates nonIonizingEDep in Mu2e, under any
+physics list (verified against a ShieldingM campaign). See QUANTITIES below.
 
 What "species" means here: the pdgId branch is the ATTRIBUTED particle, i.e. the VD116 root
 under the default grouping. So a curve labelled gamma is energy CAUSED by a photon, not
@@ -42,14 +40,23 @@ import stm_analysis as A
 from run_stm_scans import SCANS, DEFAULT_SCAN, get_scan, SOURCES
 
 
-# The three y quantities: (key, axis label, how to pull it from one booked result).
+# The y quantities: (key, axis label, how to pull it from one booked result).
+#
+# There is no non-ionizing quantity here, and that is not an omission. Geant4 only fills
+# G4Step::GetNonIonizingEnergyDeposit() when a process calls SetNonIonizingEnergyDeposit(),
+# which no standard EM or hadronic process does - including under ShieldingM, whose
+# high-precision neutron physics improves cross sections and secondaries but performs no
+# NIEL partitioning. This was checked against a real ShieldingM campaign, which returned
+# zero exactly as QGSP_BERT_EMZ did. Every other consumer of the field in Offline is a
+# pass-through, a dumper or a print; none interprets it.
+#
+# nonIonE is still written to the tree, so the day a process does populate it the plot is
+# one entry away.
 QUANTITIES = [
     ('rate',   'Rate [kcps]',
      lambda n, sums: n),
     ('edep',   r'Energy rate [MeV$\cdot$kcps]',
      lambda n, sums: sums['E']),
-    ('nonion', r'Non-ionizing rate [MeV$\cdot$kcps]',
-     lambda n, sums: sums['nonIonE']),
 ]
 
 
@@ -224,7 +231,8 @@ def main():
     frames = A.load_scan(scan, sources=args.sources, campaigns=args.campaigns,
                          output_root=args.output_root, min_edep=args.min_edep,
                          verbose=args.verbose)
-    A.warn_if_no_non_ionizing(frames)
+    # Checks, rather than assumes, that nonIonE is zero; prints only if it is not.
+    A.non_ionizing_total(frames)
 
     os.makedirs(args.outdir, exist_ok=True)
     print('scan %r, x = %s, split = %s, batches = %s'

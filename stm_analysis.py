@@ -263,20 +263,24 @@ def species_present(frames, detector=None, min_counts=1):
             if n >= min_counts]
 
 
-def warn_if_no_non_ionizing(frames):
-    """Warn when nonIonE is identically zero across the sample.
+def non_ionizing_total(frames):
+    """Summed nonIonE across the frames - expected to be exactly 0.
 
-    QGSP_BERT_EMZ - the STM convention - has no high-precision neutron transport, so Geant4
-    never fills nonIonizingEDep and the NIEL plots are a flat zero line. That is a property
-    of the physics list, not of the geometry being scanned, and without this the plot looks
-    like a result.
+    Geant4 fills G4Step::GetNonIonizingEnergyDeposit() only when a process calls
+    SetNonIonizingEnergyDeposit(), which no standard EM or hadronic process does. This was
+    checked against a real ShieldingM campaign: its high-precision neutron physics improves
+    cross sections and secondary production but performs no NIEL partitioning, and the field
+    came back zero exactly as under QGSP_BERT_EMZ. Every other consumer of it in Offline is
+    a pass-through, a dumper or a print; none interprets it.
+
+    So the plots carry no non-ionizing quantity. This helper exists to CHECK that assumption
+    rather than assume it: a non-zero result means something in the simulation changed and
+    the quantity has become worth plotting.
     """
     booked = [f.Sum('nonIonE') for f in frames.values()]
     total = sum(float(r.GetValue()) for r in booked)
-    if total == 0.0:
-        print('WARNING: non-ionizing energy is identically 0 across this sample. The STM '
-              'convention QGSP_BERT_EMZ has no high-precision neutron transport, so Geant4 '
-              'does not populate it. The non-ionizing plots will be flat zero - use the '
-              'physics_list scan (ShieldingM) for real NIEL numbers.', file=sys.stderr)
-        return False
-    return True
+    if total != 0.0:
+        print('NOTE: non-ionizing energy sums to %g MeV, not 0. Something now populates '
+              'nonIonizingEDep - it may be worth plotting after all. See the comment on '
+              'QUANTITIES in plot_scan_rates.py.' % total, file=sys.stderr)
+    return total
