@@ -197,6 +197,9 @@ def main():
     ap.add_argument('--min-edep', type=float, default=None,
                     help='Drop counts whose TOTAL deposit is below this [MeV].')
     ap.add_argument('--output-root', default=None, help='Where the ROOT files live.')
+    ap.add_argument('--tree-dir', default=A.TREE_DIR,
+                    help='TFileService directory holding the trees, i.e. the analyzer '
+                         'label in the fcl (default: %s).' % A.TREE_DIR)
     ap.add_argument('--outdir', default='plots', help='Where to write figures.')
     ap.add_argument('--format', default='png', help='Figure format (png, pdf, ...).')
     ap.add_argument('--verbose', action='store_true')
@@ -230,7 +233,7 @@ def main():
 
     frames = A.load_scan(scan, sources=args.sources, campaigns=args.campaigns,
                          output_root=args.output_root, min_edep=args.min_edep,
-                         verbose=args.verbose)
+                         directory=args.tree_dir, verbose=args.verbose)
     # Checks, rather than assumes, that nonIonE is zero; prints only if it is not.
     A.non_ionizing_total(frames)
 

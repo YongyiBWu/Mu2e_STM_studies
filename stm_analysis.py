@@ -57,6 +57,19 @@ DEFAULT_BATCHES = ['1-batch', '2-batch']
 DETECTORS = [(0, 'HPGe'), (1, 'LaBr')]
 DETECTOR_NAME = dict(DETECTORS)
 
+# TFileService puts a module's trees in a directory named after its ANALYZER LABEL, not at
+# the file root - so the trees are at "<label>/ttree", exactly as edep_plot.py reads
+# "Stage2HPGe/ttree". The default matches the label in Offline/STMMC/fcl/STMDetTree.fcl;
+# change it (or pass directory=) if the fcl renames the analyzer.
+TREE_DIR = 'STMDetTree'
+COUNT_TREE = 'ttree'
+GENEALOGY_TREE = 'ttree_genealogy'
+
+
+def tree_path(name, directory=TREE_DIR):
+    """'STMDetTree/ttree' from 'ttree'. An empty directory means the file root."""
+    return '%s/%s' % (directory, name) if directory else name
+
 # Matplotlib colours, in the same spirit as pdgid.pdgid_color_dict.
 SOURCE_COLOR_DICT = {
     'Ele':      'red',
@@ -115,7 +128,7 @@ def to_kcps(value, batch, n_files=1, pot_per_file=POT_PER_FILE):
 # ---------------------------------------------------------------------------
 
 def load_scan(scan, sources=None, campaigns=None, output_root=None,
-              min_edep=None, tree='ttree', verbose=False):
+              min_edep=None, tree=COUNT_TREE, directory=TREE_DIR, verbose=False):
     """{(source, campaign): RDataFrame} over a scan's produced files.
 
     Nothing is read here - RDataFrame is lazy, so this only opens the files and applies the
@@ -155,7 +168,7 @@ def load_scan(scan, sources=None, campaigns=None, output_root=None,
                 continue
             if verbose:
                 print('Opening ' + path)
-            df = ROOT.RDataFrame(tree, path)
+            df = ROOT.RDataFrame(tree_path(tree, directory), path)
             if min_edep is not None:
                 df = df.Filter('E + nonIonE >= %r' % float(min_edep), 'MinEdep')
             frames[(source, point.campaign)] = df
@@ -177,30 +190,34 @@ def load_scan(scan, sources=None, campaigns=None, output_root=None,
     return frames
 
 
-def load_genealogy(scan, sources=None, campaigns=None, output_root=None, verbose=False):
+def load_genealogy(scan, sources=None, campaigns=None, output_root=None,
+                   directory=TREE_DIR, verbose=False):
     """The same, over `ttree_genealogy`, for the back-trace plots.
 
     The module writes that tree only when WriteGenealogy is true, so a file may legitimately
-    not have one; such files are dropped and reported rather than failing the job.
+    not have one; such files are dropped and reported rather than failing the job. The
+    presence test is done with TFile::Get rather than by catching an RDataFrame exception,
+    since a missing tree there is a C++ throw and not a Python one.
     """
+    full = tree_path(GENEALOGY_TREE, directory)
     frames = {}
     skipped = []
-    for key, _ in load_scan(scan, sources, campaigns, output_root,
-                            verbose=verbose).items():
+    for key in load_scan(scan, sources, campaigns, output_root,
+                         directory=directory, verbose=verbose):
         source, campaign = key
         path = scan.output_path(source, campaign, output_root)
         f = ROOT.TFile.Open(path)
-        has_tree = bool(f and not f.IsZombie() and f.Get('ttree_genealogy'))
+        has_tree = bool(f and not f.IsZombie() and f.Get(full))
         if f:
             f.Close()
         if not has_tree:
             skipped.append(path)
             continue
-        frames[key] = ROOT.RDataFrame('ttree_genealogy', path)
+        frames[key] = ROOT.RDataFrame(full, path)
 
     if skipped:
-        print('WARNING: %d file(s) have no ttree_genealogy and were skipped. The back-trace '
-              'plots need it - re-run the driver without --no-genealogy:' % len(skipped),
+        print('WARNING: %d file(s) have no %s and were skipped. The back-trace plots need '
+              'it - re-run the driver without --no-genealogy:' % (len(skipped), full),
               file=sys.stderr)
         for s in skipped[:5]:
             print('  ' + s, file=sys.stderr)
