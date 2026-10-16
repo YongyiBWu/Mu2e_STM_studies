@@ -307,12 +307,12 @@ SCANS = {
         name='ssc_area',
         variables=[SSC_AREA],
         points=[
-            CampaignPoint('stmedep10', {'ssc_area': 12.7**2*np.pi()}), # 500
-            CampaignPoint('stmedep11', {'ssc_area': 6.985**2*np.pi()}), # 150
-            CampaignPoint('stmedep12', {'ssc_area': 5.715**2*np.pi()}), # 100
-            CampaignPoint('stmedep13', {'ssc_area': 3.9878**2*np.pi()}), # 50
-            CampaignPoint('stmedep14', {'ssc_area': 2.8194**2*np.pi()}), # 25
-            CampaignPoint('stmedep15', {'ssc_area': 0.001**2*np.pi()}), # 0
+            CampaignPoint('stmedep10', {'ssc_area': 12.7**2*np.pi}), # 500
+            CampaignPoint('stmedep11', {'ssc_area': 6.985**2*np.pi}), # 150
+            CampaignPoint('stmedep12', {'ssc_area': 5.715**2*np.pi}), # 100
+            CampaignPoint('stmedep13', {'ssc_area': 3.9878**2*np.pi}), # 50
+            CampaignPoint('stmedep14', {'ssc_area': 2.8194**2*np.pi}), # 25
+            CampaignPoint('stmedep15', {'ssc_area': 0.001**2*np.pi}), # 0
         ],
     ),
 
@@ -320,12 +320,12 @@ SCANS = {
         name='ssc_area_expanded',
         variables=[SSC_AREA_EXPANDED],
         points=[
-            CampaignPoint('stmedep11', {'ssc_area_expanded': 6.985**2*np.pi()}), # 150
-            CampaignPoint('stmedep16', {'ssc_area_expanded': 7.5692**2*np.pi()}), # 180
-            CampaignPoint('stmedep17', {'ssc_area_expanded': 8.176**2*np.pi()}), # 210
-            CampaignPoint('stmedep18', {'ssc_area_expanded': 8.921**2*np.pi()}), # 250
-            CampaignPoint('stmedep19', {'ssc_area_expanded': 9.772**2*np.pi()}), # 300
-            CampaignPoint('stmedep20', {'ssc_area_expanded': 11.284**2*np.pi()}), # 400
+            CampaignPoint('stmedep11', {'ssc_area_expanded': 6.985**2*np.pi}), # 150
+            CampaignPoint('stmedep16', {'ssc_area_expanded': 7.5692**2*np.pi}), # 180
+            CampaignPoint('stmedep17', {'ssc_area_expanded': 8.176**2*np.pi}), # 210
+            CampaignPoint('stmedep18', {'ssc_area_expanded': 8.921**2*np.pi}), # 250
+            CampaignPoint('stmedep19', {'ssc_area_expanded': 9.772**2*np.pi}), # 300
+            CampaignPoint('stmedep20', {'ssc_area_expanded': 11.284**2*np.pi}), # 400
         ],
     ),
 
