@@ -11,7 +11,7 @@ The scan is NOT defined here
 A CAMPAIGN (stmedep00, ...) is one production at one fixed configuration, holding the four
 source datasets; a SCAN is the set of campaigns whose configurations differ. Which campaigns
 belong to a scan, what configuration each stands for, and how the file names are built all
-live in stm_scans.py - because the analysis scripts need exactly the same mapping to turn a
+live in run_stm_scans.py - because the analysis scripts need exactly the same mapping to turn a
 produced file back into (source, campaign), and the STMDetTree module records neither. Pick
 a scan with --scan; add a configuration by adding a CampaignPoint there, not by editing this
 file.
@@ -88,7 +88,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--scan', default=DEFAULT_SCAN,
                     help=f'Which scan to run (default: {DEFAULT_SCAN}). '
-                         f'Defined in stm_scans.py: {", ".join(sorted(SCANS))}')
+                         f'Defined in run_stm_scans.py: {", ".join(sorted(SCANS))}')
     ap.add_argument('--sources', nargs='*', metavar='LABEL',
                     help='Subset of source labels to run (default: all). '
                          f'Choices: {", ".join(s for s, _ in SOURCES)}')

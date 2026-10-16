@@ -41,7 +41,7 @@ and parse_output_path() turns such a path back into (source, CampaignPoint).
 
 import os
 import re
-
+import numpy as np
 
 class Variable:
     """One scanned quantity: how to name it on an axis, and in what unit.
@@ -266,9 +266,12 @@ SOURCES = [
 # ---------------------------------------------------------------------------
 
 OLD_GEOM_SSC_AREA = Variable('old_geom_ssc_area', 'v09 SSC (upstream) area', 'mm^{2}')
+OLD_GEOM_PHYSICS_LIST = Variable('old_geom_physics_list', 'Geant4 physics list', fmt='{}')
 SSC_AREA = Variable('ssc_area', 'SSC (upstream) area', 'mm^{2}')
+SSC_AREA_EXPANDED = Variable('ssc_area_expanded', 'SSC area (same upstream/downstream)', 'mm^{2}')
 HPGE_XOFF = Variable('hpge_xoff', 'HPGe x offset', 'mm', fmt='{:+g}')
-BRICK_GAP = Variable('brick_gap', 'Lead brick gap', 'mm')
+BRICK_GAP_HOR = Variable('brick_gap_hor', 'Lead brick gap (horizontal)', 'mm')
+BRICK_GAP_VER = Variable('brick_gap_ver', 'Lead brick gap (vertical)', 'mm')
 PHYSICS_LIST = Variable('physics_list', 'Geant4 physics list', fmt='{}')
 
 SCANS = {
@@ -284,44 +287,89 @@ SCANS = {
         ],
     ),
 
-    'physics_list': Scan(
-        name='physics_list',
-        variables=[PHYSICS_LIST, OLD_GEOM_SSC_AREA],
+    'old_geom_physics_list': Scan(
+        name='old_geom_physics_list',
+        variables=[OLD_GEOM_PHYSICS_LIST],
         points=[
             # The existing EMZ campaign, reused as the baseline arm - no re-simulation
             # needed. Its SSC area must match the ShieldingM campaign's.
             CampaignPoint('stmedep00',
-                          {'physics_list': 'QGSP_BERT_EMZ', 'old_geom_ssc_area': 50.0},
+                          {'old_geom_physics_list': 'QGSP_BERT_EMZ'},
                           note='nonIonE is identically 0 - no HP neutron transport'),
             # The new campaign: same geometry, ShieldingM.
             CampaignPoint('stmedep05',
-                          {'physics_list': 'ShieldingM', 'old_geom_ssc_area': 50.0},
+                          {'old_geom_physics_list': 'ShieldingM'},
                           note='Mu2e default list; HP neutrons, so nonIonE is populated'),
         ],
     ),
 
-    # TEMPLATE: HPGe x offset scan, one campaign per offset.
+    'ssc_area': Scan(
+        name='ssc_area',
+        variables=[SSC_AREA],
+        points=[
+            CampaignPoint('stmedep10', {'ssc_area': 12.7**2*np.pi()}), # 500
+            CampaignPoint('stmedep11', {'ssc_area': 6.985**2*np.pi()}), # 150
+            CampaignPoint('stmedep12', {'ssc_area': 5.715**2*np.pi()}), # 100
+            CampaignPoint('stmedep13', {'ssc_area': 3.9878**2*np.pi()}), # 50
+            CampaignPoint('stmedep14', {'ssc_area': 2.8194**2*np.pi()}), # 25
+            CampaignPoint('stmedep15', {'ssc_area': 0.001**2*np.pi()}), # 0
+        ],
+    ),
+
+    'ssc_area_expanded': Scan(
+        name='ssc_area_expanded',
+        variables=[SSC_AREA_EXPANDED],
+        points=[
+            CampaignPoint('stmedep11', {'ssc_area_expanded': 6.985**2*np.pi()}), # 150
+            CampaignPoint('stmedep16', {'ssc_area_expanded': 7.5692**2*np.pi()}), # 180
+            CampaignPoint('stmedep17', {'ssc_area_expanded': 8.176**2*np.pi()}), # 210
+            CampaignPoint('stmedep18', {'ssc_area_expanded': 8.921**2*np.pi()}), # 250
+            CampaignPoint('stmedep19', {'ssc_area_expanded': 9.772**2*np.pi()}), # 300
+            CampaignPoint('stmedep20', {'ssc_area_expanded': 11.284**2*np.pi()}), # 400
+        ],
+    ),
+
     'hpge_xoff': Scan(
         name='hpge_xoff',
         variables=[HPGE_XOFF],
         points=[
-            # CampaignPoint('stmedep10', {'hpge_xoff': -20.0}),
-            # CampaignPoint('stmedep11', {'hpge_xoff': -10.0}),
-            # CampaignPoint('stmedep12', {'hpge_xoff':   0.0}),
-            # CampaignPoint('stmedep13', {'hpge_xoff':  10.0}),
+            CampaignPoint('stmedep10', {'hpge_xoff': -10.0}),
+            CampaignPoint('stmedep21', {'hpge_xoff': -5.0}),
+            CampaignPoint('stmedep22', {'hpge_xoff':  0.0}),
+            CampaignPoint('stmedep23', {'hpge_xoff':  5.0}),
+            CampaignPoint('stmedep24', {'hpge_xoff':  10.0}),
+            CampaignPoint('stmedep25', {'hpge_xoff':  15.0}),
+            CampaignPoint('stmedep26', {'hpge_xoff':  20.0}),
+            CampaignPoint('stmedep27', {'hpge_xoff':  25.0}),
         ],
     ),
 
-    # TEMPLATE: a 2-D scan. Every campaign sets BOTH variables; the analysis picks one for
-    # the x axis and the other becomes the series.
-    'gap_x_area': Scan(
-        name='gap_x_area',
-        variables=[BRICK_GAP, SSC_AREA],
+    'gap_ver_x_hor': Scan(
+        name='gap_ver_x_hor',
+        variables=[BRICK_GAP_VER, BRICK_GAP_HOR],
         points=[
-            # CampaignPoint('stmedep20', {'brick_gap': 0.0, 'ssc_area':  50.0}),
-            # CampaignPoint('stmedep21', {'brick_gap': 0.5, 'ssc_area':  50.0}),
-            # CampaignPoint('stmedep22', {'brick_gap': 0.0, 'ssc_area': 200.0}),
-            # CampaignPoint('stmedep23', {'brick_gap': 0.5, 'ssc_area': 200.0}),
+            CampaignPoint('stmedep10', {'brick_gap_ver': 2*0.1, 'brick_gap_hor': 2*0.8}),
+            CampaignPoint('stmedep28', {'brick_gap_ver': 2*0.1, 'brick_gap_hor': 2*0.4}),
+            CampaignPoint('stmedep29', {'brick_gap_ver': 2*0.1, 'brick_gap_hor': 2*1.2}),
+            CampaignPoint('stmedep30', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*0.4}),
+            CampaignPoint('stmedep31', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*0.8}),
+            CampaignPoint('stmedep32', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*1.2}),
+        ],
+    ),
+
+    'physics_list': Scan(
+        name='physics_list',
+        variables=[PHYSICS_LIST],
+        points=[
+            # The standard EMZ campaign, reused as the baseline arm - no re-simulation
+            # needed. Its SSC area must match the ShieldingM campaign's.
+            CampaignPoint('stmedep10',
+                          {'physics_list': 'QGSP_BERT_EMZ'},
+                          note='nonIonE is identically 0 - no HP neutron transport'),
+            # same geometry, ShieldingM.
+            CampaignPoint('stmedep33',
+                          {'physics_list': 'ShieldingM'},
+                          note='Mu2e default list; HP neutrons, so nonIonE is populated'),
         ],
     ),
 }
@@ -337,7 +385,7 @@ def get_scan(name=None):
     if not scan.points:
         raise SystemExit(
             f'Scan {name!r} has no campaigns yet - it is a template. Add CampaignPoint '
-            f'entries in stm_scans.py once the productions exist.')
+            f'entries in run_stm_scans.py once the productions exist.')
     return scan
 
 
