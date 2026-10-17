@@ -72,29 +72,34 @@ OFFSET_SPOT = 40.64         # stm.STM_SSC.offset_Spot: the two apertures about X
 OFFSET_HPGE = -10.0         # stm.HPGe.offset_HPGe
 OFFSET_LABR = 0.0           # stm.LaBr.offset_LaBr
 
-# The z anchor. STM_v11.txt puts VD101 15 mm upstream of the cradle front, at 40310.29.
-STM_SHIELDING_REF = 40310.29 + 15.0                   # 40325.29, the cradle's front face
+# The z anchor: east wall inner face - stm.STM_SSC.FrontToWall - BackShielding.BPThick
+# - BackShielding.ShieldingPipeGap = 41351.2 - 924.3 - 25.4 - 76.2. VD101 sits 15 mm
+# upstream of it, at 40310.3.
+STM_SHIELDING_REF = 40325.3                           # the cradle's front face
+SSC_SUPPORT_DEPTH = 110.300                           # stm.SSCSupport.depth, the cradle in z
 WALL_TO_CRADLE_GAP = 1.200                            # stm.FrontShieldingRight.wallToCradleGap
-FRONT_SHIELD_DZ = 203.200                             # 2+1+2+1+2 in of layers
+FRONT_SHIELD_DZ = 203.200                             # 2+1+2+1+2 in of Pb/BP layers
+FSR_LINING_DZ = 12.700                                # the copper lining behind the last lead
 SIDE_WALL_DZ = 609.600                                # 24 in
 
-SHIELD_HOUSE_Z0 = STM_SHIELDING_REF + WALL_TO_CRADLE_GAP
-# Front_T in constructSTM.cc: the back face of the front shielding, which every detector z
-# is measured from.
-FRONT_T = SHIELD_HOUSE_Z0 + FRONT_SHIELD_DZ
+# The front shielding starts behind the cradle, 111.5 mm past its front face (STMMaker
+# fsrFrontZ = SSCSupport depth + wallToCradleGap); the side walls start where its last lead
+# layer ends, 314.7 mm past it, and run to FrontToWall at 924.3 mm.
+SHIELD_HOUSE_Z0 = STM_SHIELDING_REF + SSC_SUPPORT_DEPTH + WALL_TO_CRADLE_GAP
+# Front_T in constructSTM.cc: the back face of the front shielding right's copper lining,
+# 327.4 mm past the cradle front, which every detector z is measured from.
+FRONT_T = SHIELD_HOUSE_Z0 + FRONT_SHIELD_DZ + FSR_LINING_DZ
 
-# Transverse extent of the shield house, about the beam centre.
-SHIELD_X_MIN = X_BEAM - 418.864                       # stm.RightShielding.Right_Xmax
-SHIELD_X_MAX = X_BEAM + 130.556                       # stm.LeftShielding.Left_Xmin
-SHIELD_DY = 508.0                                     # room height
+# SSC block. v11 is symmetric and roughly half v09 in both width and height, and drops
+# W_middle / delta_WlL / delta_WlR entirely.
+SSC_W_WIDTH = 162.560                                 # stm.STM_SSC.W_width,  6.4 in
+SSC_W_HEIGHT = 81.280                                 # stm.STM_SSC.W_height, 3.2 in
+SSC_WDEPTH_F, SSC_ZGAP, SSC_ZGAP_BACK = 50.800, 8.70, 4.35
+SSC_DZ = SSC_WDEPTH_F + 50.800                        # Wdepth_f + Wdepth_b
+# The tungsten's upstream face is ZGap - ZGapBack past the cradle front; both slabs follow.
+SSC_Z_FRONT = STM_SHIELDING_REF + SSC_ZGAP - SSC_ZGAP_BACK            # 40329.65
 
-# SSC, centred at Wdepth_f/2 + ZGap - ZGapBack from the reference.
-SSC_WDEPTH_F, SSC_ZGAP, SSC_ZGAP_BACK = 50.8, 8.70, 4.35
-SSC_DZ = 101.6                                        # Wdepth_f + Wdepth_b
-
-# Detector standoffs from FRONT_T. NOTE these are the STM_v11 values; v09 used
-# Z_LaBr = 330.0 and Z_HPGe = 63.131, so outlines drawn over a v09 campaign sit ~20 mm and
-# ~13 mm downstream of where that geometry actually put the crystals.
+# Detector standoffs from FRONT_T.
 Z_LABR = 310.0              # stm.LaBr.Z_LaBr
 Z_HPGE = 50.431             # stm.HPGe.Z_HPGe
 
@@ -118,24 +123,44 @@ _HPGE_PROJ = _HPGE_FACE_TO_CENTRE * np.sqrt(2.0) / 2.0                # 31.66 mm
 # Each entry: (label, z_c, x_c, y_c, dz, dx, dy, angle_deg, colour). angle_deg is a rotation
 # about Y, so it tilts the TOP (z, x) view only - which is why the HPGe is angled in one
 # panel and square in the other.
-# Listed outermost first so the house draws behind what it contains.
+# The zoomed view: the STM shield house, in Mu2e coordinates [mm], from STM_v11. In z it
+# runs from the SSC front shield's poly block (about 540 mm upstream of the cradle front at
+# 40325.3; its upstream face is at 39787.7) to the hall wall's inner face at 41351.2. In x
+# it covers the house from the left wall's outer face (806.45 mm on the -x side of the beam
+# at -3904) to the right wall's outer edge prism (311.15 mm on the +x side). In y it covers
+# the baseplate (top 236 mm, bottom 261.4 mm below the bore) up to the right wall's edge
+# prism top (254 mm above the bore). These bounds include a margin and are not exact
+# outlines; change them here if the geometry changes.
+SHIELD_HOUSE = {
+    'z': (39750.0, 41400.0),
+    'x': (-4800.0, -3300.0),
+    'y': (-450.0, 550.0),
+}
+
+# Listed outermost first so the house draws behind what it contains. The house and its front
+# shielding take their transverse extent from SHIELD_HOUSE above: v11 builds
+# the house from individually placed bricks with no single width to read, so those bounds are
+# the best available description of it and there is no second set to drift from them.
+_HOUSE_X_C = sum(SHIELD_HOUSE['x']) / 2.0
+_HOUSE_X_W = SHIELD_HOUSE['x'][1] - SHIELD_HOUSE['x'][0]
+_HOUSE_Y_C = sum(SHIELD_HOUSE['y']) / 2.0
+_HOUSE_Y_W = SHIELD_HOUSE['y'][1] - SHIELD_HOUSE['y'][0]
+
 STM_ELEMENTS = [
     ('Shield house',
      SHIELD_HOUSE_Z0 + (FRONT_SHIELD_DZ + SIDE_WALL_DZ) / 2.0,
-     (SHIELD_X_MIN + SHIELD_X_MAX) / 2.0,
-     0.0,
-     FRONT_SHIELD_DZ + SIDE_WALL_DZ, SHIELD_X_MAX - SHIELD_X_MIN, SHIELD_DY,
+     _HOUSE_X_C, _HOUSE_Y_C,
+     FRONT_SHIELD_DZ + SIDE_WALL_DZ, _HOUSE_X_W, _HOUSE_Y_W,
      0.0, 'dimgrey'),
     ('Front shielding',
      SHIELD_HOUSE_Z0 + FRONT_SHIELD_DZ / 2.0,
-     (SHIELD_X_MIN + SHIELD_X_MAX) / 2.0,
-     0.0,
-     FRONT_SHIELD_DZ, SHIELD_X_MAX - SHIELD_X_MIN, SHIELD_DY,
+     _HOUSE_X_C, _HOUSE_Y_C,
+     FRONT_SHIELD_DZ, _HOUSE_X_W, _HOUSE_Y_W,
      0.0, 'tab:brown'),
     ('SSC',
-     STM_SHIELDING_REF + SSC_WDEPTH_F / 2.0 + SSC_ZGAP - SSC_ZGAP_BACK,
+     SSC_Z_FRONT + SSC_DZ / 2.0,
      X_BEAM, 0.0,
-     SSC_DZ, 177.8, 177.8,                            # W_middle, W_height
+     SSC_DZ, SSC_W_WIDTH, SSC_W_HEIGHT,
      0.0, 'tab:olive'),
     ('HPGe',
      FRONT_T + Z_HPGE + _HPGE_PROJ,
@@ -151,18 +176,6 @@ STM_ELEMENTS = [
      0.0, 'tab:blue'),
 ]
 
-# The zoomed view: the STM shield house, in Mu2e coordinates [mm], from STM_v11. In z it
-# runs from the SSC front shield's poly block (about 540 mm upstream of the cradle front at
-# 40325.3) to the hall wall's inner face at 41351.2. In x it covers the front shielding,
-# from the left outer poly (about 830 mm on the -x side of the beam at -3904) to the right
-# wall (about 540 mm on the +x side). In y it covers the baseplate (236 mm below the bore)
-# up to the top courses. These bounds include a margin and are not exact outlines; change
-# them here if the geometry changes.
-SHIELD_HOUSE = {
-    'z': (39750.0, 41400.0),
-    'x': (-4800.0, -3300.0),
-    'y': (-450.0, 550.0),
-}
 
 
 def fetch_counts(frames, source=None, campaign=None, detector=None, pdg=None,
