@@ -17,9 +17,11 @@ Geometry drawn
 --------------
 The Mu2e outlines come from plot_utils.draw_Mu2e_topview / draw_Mu2e_sideview, so these
 figures sit on the same frame as the rest of the repo's displays. On top of that, this
-script outlines the STM hardware: the front shielding, the SSC, and the two crystals. The
-HPGe is rotated 45 degrees about Y, so it is drawn angled in the top view and square in the
-side view, matching constructSTM.cc.
+script outlines the major STM pieces as boxes: the SSC front shield, the SSC, the front
+shielding, the left, right and top walls, the floor, the back poly, and the two crystals.
+Each view is a cut through the bore, so the top view leaves out the roof and floor and the
+side view leaves out the side walls. The HPGe is rotated 45 degrees about Y, so it is drawn
+angled in the top view and square in the side view, matching constructSTM.cc.
 
 Those outlines are HAND-ENTERED estimates, not read from the geometry - see STM_ELEMENTS
 below for what is exact and what is not.
@@ -80,7 +82,6 @@ SSC_SUPPORT_DEPTH = 110.300                           # stm.SSCSupport.depth, th
 WALL_TO_CRADLE_GAP = 1.200                            # stm.FrontShieldingRight.wallToCradleGap
 FRONT_SHIELD_DZ = 203.200                             # 2+1+2+1+2 in of Pb/BP layers
 FSR_LINING_DZ = 12.700                                # the copper lining behind the last lead
-SIDE_WALL_DZ = 609.600                                # 24 in
 
 # The front shielding starts behind the cradle, 111.5 mm past its front face (STMMaker
 # fsrFrontZ = SSCSupport depth + wallToCradleGap); the side walls start where its last lead
@@ -120,60 +121,93 @@ LABR_CRYSTAL_L = 76.2
 _HPGE_FACE_TO_CENTRE = 1.5 + 4.0 + 0.03 + HPGE_CRYSTAL_L / 2.0        # 44.78 mm
 _HPGE_PROJ = _HPGE_FACE_TO_CENTRE * np.sqrt(2.0) / 2.0                # 31.66 mm
 
-# Each entry: (label, z_c, x_c, y_c, dz, dx, dy, angle_deg, colour). angle_deg is a rotation
-# about Y, so it tilts the TOP (z, x) view only - which is why the HPGe is angled in one
-# panel and square in the other.
-# The zoomed view: the STM shield house, in Mu2e coordinates [mm], from STM_v11. In z it
-# runs from the SSC front shield's poly block (about 540 mm upstream of the cradle front at
-# 40325.3; its upstream face is at 39787.7) to the hall wall's inner face at 41351.2. In x
-# it covers the house from the left wall's outer face (806.45 mm on the -x side of the beam
-# at -3904) to the right wall's outer edge prism (311.15 mm on the +x side). In y it covers
-# the baseplate (top 236 mm, bottom 261.4 mm below the bore) up to the right wall's edge
-# prism top (254 mm above the bore). These bounds include a margin and are not exact
-# outlines; change them here if the geometry changes.
+# The zoomed view, in Mu2e coordinates [mm], from STM_v11. In z it runs from the SSC front
+# shield's poly block (its upstream face 537.6 mm upstream of the cradle front at 40325.3,
+# at 39787.7) to the hall wall's inner face at 41351.2. In x it covers the back poly
+# (1054.8 mm on the -x side of the beam at -3904 to 445.2 mm on the +x side), which is
+# wider than the house; the house runs from the left wall's outer face (806.45 mm on -x) to
+# the right wall's outer edge prism (311.15 mm on +x). In y it covers the back poly
+# (+-500 mm), which takes in the baseplate (bottom 261.4 mm below the bore) and the walls
+# (up to 254 mm above it). These bounds include a margin; change them here if the geometry
+# changes.
 SHIELD_HOUSE = {
     'z': (39750.0, 41400.0),
-    'x': (-4800.0, -3300.0),
-    'y': (-450.0, 550.0),
+    'x': (-5000.0, -3300.0),
+    'y': (-550.0, 550.0),
 }
 
-# Listed outermost first so the house draws behind what it contains. The house and its front
-# shielding take their transverse extent from SHIELD_HOUSE above: v11 builds
-# the house from individually placed bricks with no single width to read, so those bounds are
-# the best available description of it and there is no second set to drift from them.
-_HOUSE_X_C = sum(SHIELD_HOUSE['x']) / 2.0
-_HOUSE_X_W = SHIELD_HOUSE['x'][1] - SHIELD_HOUSE['x'][0]
-_HOUSE_Y_C = sum(SHIELD_HOUSE['y']) / 2.0
-_HOUSE_Y_W = SHIELD_HOUSE['y'][1] - SHIELD_HOUSE['y'][0]
+# The major pieces, one box per section, each from its own extents in STM_v11: x about the
+# beam axis (X_BEAM), y about the bore, z from the cradle front. Outer envelopes only - the
+# bricks, sheets and bores inside a section are not drawn, nor is the inner lining.
+Y_BASE = -236.0                                       # top of the baseplate, boreToBase below
+X_HOUSE_REF = 285.75                                  # stm.FrontShieldingRight.brickEndX
+WALL_Z0 = SHIELD_HOUSE_Z0 + FRONT_SHIELD_DZ           # side walls start, 314.7 past the cradle
+WALL_Z1 = STM_SHIELDING_REF + 924.3                   # and end at FrontToWall
 
+# Which view a box is drawn in. Each view is a cut through the bore: the top (z, x) view
+# leaves out the roof and floor, which would cover the inside of the house from above, and
+# the side (z, y) view leaves out the two side walls, which would cover it from the side.
+BOTH, TOP, SIDE = ('top', 'side'), ('top',), ('side',)
+
+
+def _box(label, z0, z1, x0, x1, y0, y1, color, views=BOTH):
+    """An element from its extents: z absolute, x about X_BEAM, y about the bore."""
+    return (label, (z0 + z1) / 2.0, X_BEAM + (x0 + x1) / 2.0, (y0 + y1) / 2.0,
+            z1 - z0, x1 - x0, y1 - y0, 0.0, color, views)
+
+
+# Each entry: (label, z_c, x_c, y_c, dz, dx, dy, angle_deg, colour, views). Listed outermost
+# first so larger pieces draw behind what they contain.
 STM_ELEMENTS = [
-    ('Shield house',
-     SHIELD_HOUSE_Z0 + (FRONT_SHIELD_DZ + SIDE_WALL_DZ) / 2.0,
-     _HOUSE_X_C, _HOUSE_Y_C,
-     FRONT_SHIELD_DZ + SIDE_WALL_DZ, _HOUSE_X_W, _HOUSE_Y_W,
-     0.0, 'dimgrey'),
-    ('Front shielding',
-     SHIELD_HOUSE_Z0 + FRONT_SHIELD_DZ / 2.0,
-     _HOUSE_X_C, _HOUSE_Y_C,
-     FRONT_SHIELD_DZ, _HOUSE_X_W, _HOUSE_Y_W,
-     0.0, 'tab:brown'),
+    # Baseplate: 1435.1 wide centred 326.98 mm on -x, 927.1 long from 2.8 mm upstream of the
+    # cradle front; the floor's poly and lead layers on it reach 6 in above its top.
+    _box('Floor', STM_SHIELDING_REF - 2.8, WALL_Z1, -1044.53, 390.57,
+         Y_BASE - 25.4, Y_BASE + 152.4, 'slategrey', SIDE),
+    # Roof: aluminium plates from wallToBase (304.8 above the baseplate) up, then a lead
+    # layer and a poly sheet, 95.25 mm in all; from refFromRightWallX (-76.2) in from the
+    # house reference, 914.4 wide toward -x.
+    _box('Top wall', WALL_Z0, WALL_Z1, X_HOUSE_REF - 76.2 - 914.4, X_HOUSE_REF - 76.2,
+         Y_BASE + 304.8, Y_BASE + 304.8 + 95.25, 'dimgrey', SIDE),
+    # Outer face 806.45 mm on -x (refFromBrickEndX -1092.2 from the house reference), 165.1 mm
+    # of BP/Pb/BP/Pb/Cu inward, up to the top edge sheet 406.4 mm above the baseplate.
+    _box('Left wall', WALL_Z0, WALL_Z1, -806.45, -641.35, Y_BASE, Y_BASE + 406.4,
+         'dimgrey', TOP),
+    # Outer edge prism 285.75..311.15 on +x, 139.7 mm of Pb/BP/Pb/Cu inward of 285.75, up to
+    # the edge prism's 490 mm above the baseplate.
+    _box('Right wall', WALL_Z0, WALL_Z1, 146.05, 311.15, Y_BASE, Y_BASE + 490.0,
+         'dimgrey', TOP),
+    # The right half's 24 in courses from the house reference toward -x, then the left half's
+    # 20 in of block columns; from the baseplate to the 254 mm sheet tops, and through the
+    # copper lining. The left half's inner sheet and brick grid continue 76.2 mm further
+    # downstream, inside the walls, and are not drawn.
+    _box('Front shielding', SHIELD_HOUSE_Z0, FRONT_T, -831.85, X_HOUSE_REF,
+         Y_BASE, Y_BASE + 490.0, 'tab:brown'),
+    # SSC front shield: poly1 (front face 537.6 mm upstream of the cradle front), the shelf
+    # (to 16.3 mm upstream of it) and the lead bricks; widest in x at the 8 in bricks on the
+    # HPGe side, lowest at the shelf.
+    _box('SSC front shield', STM_SHIELDING_REF - 537.6, STM_SHIELDING_REF - 16.3,
+         -271.78, 177.5, -152.4, 126.9, 'darkkhaki'),
+    # BackShielding: 1500 x 1000, centred BackS_dX = -304.8 and BackS_dY = 0, behind
+    # ShieldingPipeGap (76.2); its back face is the east wall.
+    _box('Back poly', WALL_Z1 + 76.2, WALL_Z1 + 76.2 + 25.4, -1054.8, 445.2, -500.0, 500.0,
+         'tab:cyan'),
     ('SSC',
      SSC_Z_FRONT + SSC_DZ / 2.0,
      X_BEAM, 0.0,
      SSC_DZ, SSC_W_WIDTH, SSC_W_HEIGHT,
-     0.0, 'tab:olive'),
+     0.0, 'tab:olive', BOTH),
     ('HPGe',
      FRONT_T + Z_HPGE + _HPGE_PROJ,
      X_BEAM - OFFSET_SPOT + OFFSET_HPGE - _HPGE_PROJ,
      0.0,
      HPGE_CRYSTAL_L, 2 * HPGE_CRYSTAL_R, 2 * HPGE_CRYSTAL_R,
-     HPGE_ANGLE_DEG, 'tab:red'),
+     HPGE_ANGLE_DEG, 'tab:red', BOTH),
     ('LaBr',
      FRONT_T + Z_LABR + 1.5 + 4.0 + LABR_CRYSTAL_L / 2.0,   # WindowD + AirD + L/2
      X_BEAM + OFFSET_SPOT + OFFSET_LABR,
      0.0,
      LABR_CRYSTAL_L, 2 * LABR_CRYSTAL_R, 2 * LABR_CRYSTAL_R,
-     0.0, 'tab:blue'),
+     0.0, 'tab:blue', BOTH),
 ]
 
 
@@ -258,25 +292,33 @@ def draw_stm_region(ax_top, ax_side):
     """Outline the STM hardware on both views.
 
     A rotation about Y tilts the top (z, x) view only, so an element with a non-zero angle
-    is drawn as a rotated rectangle there and as a plain box in the side (z, y) view.
+    is drawn as a rotated rectangle there and as a plain box in the side (z, y) view. Each
+    element is drawn only in the views it lists (see BOTH / TOP / SIDE), as an outline with
+    no fill so the particle display stays visible through it, and is named in a legend
+    beside the side view rather than by labels on the boxes.
     """
-    for (label, zc, xc, yc, dz, dx, dy, angle, color) in STM_ELEMENTS:
-        # Corners computed here rather than via Rectangle(angle=..., rotation_point=...),
-        # which needs matplotlib >= 3.6; this works on any version and keeps the rotation
-        # visible.
-        half = np.array([[-dz / 2.0, -dx / 2.0], [dz / 2.0, -dx / 2.0],
-                         [dz / 2.0, dx / 2.0], [-dz / 2.0, dx / 2.0]])
-        a = np.radians(angle)
-        rot = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
-        corners = half.dot(rot.T) + np.array([zc, xc])
-        ax_top.add_patch(Polygon(corners, closed=True, edgecolor=color,
-                                 facecolor='none', linewidth=1.2, zorder=3))
-        # The side (z, y) view is unaffected by a rotation about Y.
-        ax_side.add_patch(Rectangle((zc - dz / 2.0, yc - dy / 2.0), dz, dy,
-                                    edgecolor=color, facecolor='none',
-                                    linewidth=1.2, zorder=3))
-        ax_top.text(zc, corners[:, 1].max() + 15.0, label, fontsize=6, color=color,
-                    ha='center', va='bottom', zorder=3)
+    handles = []
+    for (label, zc, xc, yc, dz, dx, dy, angle, color, views) in STM_ELEMENTS:
+        if 'top' in views:
+            # Corners computed here rather than via Rectangle(angle=..., rotation_point=...),
+            # which needs matplotlib >= 3.6; this works on any version and keeps the
+            # rotation visible.
+            half = np.array([[-dz / 2.0, -dx / 2.0], [dz / 2.0, -dx / 2.0],
+                             [dz / 2.0, dx / 2.0], [-dz / 2.0, dx / 2.0]])
+            a = np.radians(angle)
+            rot = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+            corners = half.dot(rot.T) + np.array([zc, xc])
+            ax_top.add_patch(Polygon(corners, closed=True, edgecolor=color,
+                                     facecolor='none', linewidth=1.2, zorder=3))
+        if 'side' in views:
+            # The side (z, y) view is unaffected by a rotation about Y.
+            ax_side.add_patch(Rectangle((zc - dz / 2.0, yc - dy / 2.0), dz, dy,
+                                        edgecolor=color, facecolor='none',
+                                        linewidth=1.2, zorder=3))
+        if label not in [h.get_label() for h in handles]:
+            handles.append(Line2D([0], [0], color=color, linewidth=1.2, label=label))
+    ax_side.legend(handles=handles, loc='center left', bbox_to_anchor=(1.02, 0.5),
+                   frameon=False, fontsize=7, title='geometry', title_fontsize=7)
 
 
 def new_figure(title, zoom=True):
