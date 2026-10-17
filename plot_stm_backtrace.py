@@ -318,7 +318,7 @@ def draw_stm_region(ax_top, ax_side):
         if label not in [h.get_label() for h in handles]:
             handles.append(Line2D([0], [0], color=color, linewidth=1.2, label=label))
     ax_side.legend(handles=handles, loc='center left', bbox_to_anchor=(1.02, 0.5),
-                   frameon=False, fontsize=7, title='geometry', title_fontsize=7)
+                   frameon=False, fontsize=12, title='geometry', title_fontsize=12)
 
 
 def new_figure(title, zoom=True):
@@ -357,7 +357,9 @@ def new_figure(title, zoom=True):
         ax.set_aspect('auto')
         ax.set_xlim(zlo, zhi)
         ax.set_ylim(lo, hi)
-    fig.suptitle(title)
+    # The figure carries 1.2 in of margin beyond the two panels, so a default suptitle sits
+    # well clear of them. Place it just above the top axes instead, in figure fraction.
+    fig.suptitle(title, y=1.0 - 0.3 / (h_top + h_side + 1.2), va='top')
     return fig, ax_top, ax_side
 
 
@@ -433,7 +435,7 @@ def legend_for(seen, ax):
                for pdg, n in sorted(seen.items(), key=lambda kv: -kv[1])]
     if handles:
         ax.legend(handles=handles, loc='center left', bbox_to_anchor=(1.02, 0.5),
-                  frameon=False, fontsize=8)
+                  frameon=False, fontsize=12)
 
 
 def main():
