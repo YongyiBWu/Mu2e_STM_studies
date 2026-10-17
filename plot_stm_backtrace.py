@@ -346,8 +346,16 @@ def new_figure(title, zoom=True):
     axes_w = 9.0                                    # inches of z axis
     scale = axes_w / (zhi - zlo)                    # inches per mm, same on every axis
     h_top, h_side = (xhi - xlo) * scale, (yhi - ylo) * scale
-    fig = plt.figure(figsize=(axes_w + 1.5, h_top + h_side + 1.2))
-    gs = GridSpec(2, 1, figure=fig, height_ratios=[h_top, h_side], hspace=0.0)
+    # Fixed margins in inches, converted to the figure fractions GridSpec wants. Letting
+    # GridSpec use its defaults leaves a band of empty figure above the top panel that no
+    # suptitle placement can close, and bbox_inches='tight' preserves it rather than
+    # cropping it, since the title sits above it.
+    fig_h = h_top + h_side + 1.2
+    top_margin_in, bottom_margin_in = 0.45, 0.6
+    fig = plt.figure(figsize=(axes_w + 1.5, fig_h))
+    gs = GridSpec(2, 1, figure=fig, height_ratios=[h_top, h_side], hspace=0.0,
+                  top=1.0 - top_margin_in / fig_h,
+                  bottom=bottom_margin_in / fig_h)
     ax_top = fig.add_subplot(gs[0])
     ax_side = fig.add_subplot(gs[1], sharex=ax_top)
     plot_utils.draw_Mu2e_topview(ax_top, draw_stm_area=False)
@@ -357,9 +365,8 @@ def new_figure(title, zoom=True):
         ax.set_aspect('auto')
         ax.set_xlim(zlo, zhi)
         ax.set_ylim(lo, hi)
-    # The figure carries 1.2 in of margin beyond the two panels, so a default suptitle sits
-    # well clear of them. Place it just above the top axes instead, in figure fraction.
-    fig.suptitle(title, y=1.0 - 0.3 / (h_top + h_side + 1.2), va='top')
+    # Centred in the top margin the GridSpec left for it.
+    fig.suptitle(title, y=1.0 - 0.5 * top_margin_in / fig_h, va='center')
     return fig, ax_top, ax_side
 
 
