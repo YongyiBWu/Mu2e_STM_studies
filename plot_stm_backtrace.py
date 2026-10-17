@@ -335,8 +335,8 @@ def new_figure(title, zoom=True):
         gs = GridSpec(5, 1, figure=fig, wspace=0.05, hspace=0.00)
         ax_top = fig.add_subplot(gs[0:3])
         ax_side = fig.add_subplot(gs[3:], sharex=ax_top)
-        plot_utils.draw_Mu2e_topview(ax_top)
-        plot_utils.draw_Mu2e_sideview(ax_side)
+        plot_utils.draw_Mu2e_topview(ax_top, draw_stm_area=False)
+        plot_utils.draw_Mu2e_sideview(ax_side, draw_stm_area=False)
         draw_stm_region(ax_top, ax_side)
         fig.suptitle(title, y=0.93)
         return fig, ax_top, ax_side
@@ -350,8 +350,8 @@ def new_figure(title, zoom=True):
     gs = GridSpec(2, 1, figure=fig, height_ratios=[h_top, h_side], hspace=0.0)
     ax_top = fig.add_subplot(gs[0])
     ax_side = fig.add_subplot(gs[1], sharex=ax_top)
-    plot_utils.draw_Mu2e_topview(ax_top)
-    plot_utils.draw_Mu2e_sideview(ax_side)
+    plot_utils.draw_Mu2e_topview(ax_top, draw_stm_area=False)
+    plot_utils.draw_Mu2e_sideview(ax_side, draw_stm_area=False)
     draw_stm_region(ax_top, ax_side)
     for ax, (lo, hi) in ((ax_top, (xlo, xhi)), (ax_side, (ylo, yhi))):
         ax.set_aspect('auto')

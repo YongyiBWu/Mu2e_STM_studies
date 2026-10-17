@@ -290,7 +290,9 @@ def twod_hist(df, xitem, yitem, title, forcemax = None):
     
     return fig, ax
 
-def draw_Mu2e_topview(ax):
+def draw_Mu2e_topview(ax, draw_stm_area=True):
+    # draw_stm_area: the STM_area box below is anchored on constants.VD101_Z, a position from
+    # before the STM moved; pass False where the STM is drawn from its own geometry.
     rectangles = [ #(lower-left x, y), width, height
         ((constants.ps_cryo_start_Z, constants.production_target_X-constants.ps_cryo_OR), constants.ps_cryo_len, constants.ps_cryo_OR*2), # PS_out
         ((constants.ps_cryo_start_Z, constants.production_target_X-constants.ps_cryo_IR), constants.ps_cryo_len, constants.ps_cryo_IR*2), # PS_in
@@ -300,8 +302,9 @@ def draw_Mu2e_topview(ax):
         ((constants.stopping_target_start_Z, constants.stopping_target_X-constants.stopping_target_OR), constants.stopping_target_len, constants.stopping_target_OR*2), # stopping_target
         ((constants.trk_start_Z, constants.stopping_target_X-constants.trk_OR), constants.trl_len, constants.trk_OR*2), # trk
         ((constants.calo_start_Z, constants.stopping_target_X-constants.calo_OR), constants.calo_len, constants.calo_OR*2), # calo
-        ((constants.VD101_Z, constants.stopping_target_X-1000.), 910., 1400.) # STM_area
     ]
+    if draw_stm_area:
+        rectangles.append(((constants.VD101_Z, constants.stopping_target_X-1000.), 910., 1400.)) # STM_area
     for corner, width, height in rectangles:
         x, y = corner
         rect = Rectangle((x, y),  width, height,
@@ -317,7 +320,8 @@ def draw_Mu2e_topview(ax):
                    bottom=False, top=False, labelbottom=False)
     return
 
-def draw_Mu2e_sideview(ax):
+def draw_Mu2e_sideview(ax, draw_stm_area=True):
+    # draw_stm_area: see draw_Mu2e_topview.
     rectangles = [ #(lower-left x, y), width, height
         ((constants.ps_cryo_start_Z, -constants.ps_cryo_OR), constants.ps_cryo_len, constants.ps_cryo_OR*2), # PS_out
         ((constants.ps_cryo_start_Z, -constants.ps_cryo_IR), constants.ps_cryo_len, constants.ps_cryo_IR*2), # PS_in
@@ -327,8 +331,9 @@ def draw_Mu2e_sideview(ax):
         ((constants.stopping_target_start_Z, -constants.stopping_target_OR), constants.stopping_target_len, constants.stopping_target_OR*2), # stopping_target
         ((constants.trk_start_Z, -constants.trk_OR), constants.trl_len, constants.trk_OR*2), # trk
         ((constants.calo_start_Z, -constants.calo_OR), constants.calo_len, constants.calo_OR*2), # calo
-        ((constants.VD101_Z, -254.), 910., 508.) # STM_area
     ]
+    if draw_stm_area:
+        rectangles.append(((constants.VD101_Z, -254.), 910., 508.)) # STM_area
     for corner, width, height in rectangles:
         x, y = corner
         rect = Rectangle((x, y),  width, height,
