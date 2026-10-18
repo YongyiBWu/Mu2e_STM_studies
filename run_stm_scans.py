@@ -396,6 +396,10 @@ SCANS = {
             CampaignPoint('stmedep30', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*0.4}),
             CampaignPoint('stmedep31', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*0.8}),
             CampaignPoint('stmedep32', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*1.2}),
+            CampaignPoint('stmedep34', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*2.0}),
+            CampaignPoint('stmedep35', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*4.0}),
+            CampaignPoint('stmedep36', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*6.0}),
+            CampaignPoint('stmedep37', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*8.0}),
         ],
     ),
 
