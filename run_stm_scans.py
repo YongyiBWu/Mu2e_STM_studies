@@ -285,6 +285,7 @@ HPGE_XOFF = Variable('hpge_xoff', 'HPGe x offset', 'mm', fmt='{:+g}')
 BRICK_GAP_HOR = Variable('brick_gap_hor', 'Lead brick gap (horizontal)', 'mm')
 BRICK_GAP_VER = Variable('brick_gap_ver', 'Lead brick gap (vertical)', 'mm')
 PHYSICS_LIST = Variable('physics_list', 'Geant4 physics list', fmt='{}')
+BORE_PIPE_GAP = Variable('bore_pipe_gap', 'gap b/w front shielding bore and copper pipe','mm')
 
 # Detector-split overrides for the OLD geometry.
 #
@@ -422,6 +423,20 @@ SCANS = {
             CampaignPoint('stmedep33',
                           {'physics_list': 'ShieldingM'},
                           note='Mu2e default list; HP neutrons, so nonIonE is populated'),
+        ],
+    ),
+
+    'bore_pipe_gap': Scan(
+        name='bore_pipe_gap',
+        variables=[BORE_PIPE_GAP],
+        points=[
+            CampaignPoint('stmedep10', {'bore_pipe_gap': 0.0}),
+            CampaignPoint('stmedep44', {'bore_pipe_gap': 0.5}),
+            CampaignPoint('stmedep45', {'bore_pipe_gap': 1.0}),
+            CampaignPoint('stmedep46', {'bore_pipe_gap': 2.0}),
+            CampaignPoint('stmedep47', {'bore_pipe_gap': 5.0}),
+            CampaignPoint('stmedep48', {'bore_pipe_gap': 10.0}),
+            CampaignPoint('stmedep49', {'bore_pipe_gap': 15.0}),
         ],
     ),
 }
