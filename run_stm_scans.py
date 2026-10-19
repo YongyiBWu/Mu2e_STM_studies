@@ -400,6 +400,12 @@ SCANS = {
             CampaignPoint('stmedep35', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*4.0}),
             CampaignPoint('stmedep36', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*6.0}),
             CampaignPoint('stmedep37', {'brick_gap_ver': 2*0.2, 'brick_gap_hor': 2*8.0}),
+            CampaignPoint('stmedep38', {'brick_gap_ver': 2*0.5, 'brick_gap_hor': 2*0.8}),
+            CampaignPoint('stmedep39', {'brick_gap_ver': 2*1.0, 'brick_gap_hor': 2*0.8}),
+            CampaignPoint('stmedep40', {'brick_gap_ver': 2*2.0, 'brick_gap_hor': 2*0.8}),
+            CampaignPoint('stmedep41', {'brick_gap_ver': 2*5.0, 'brick_gap_hor': 2*0.8}),
+            CampaignPoint('stmedep42', {'brick_gap_ver': 2*10.0, 'brick_gap_hor': 2*0.8}),
+            # CampaignPoint('stmedep43', {'brick_gap_ver': 2*20.0, 'brick_gap_hor': 2*0.8}), bore too large
         ],
     ),
 
