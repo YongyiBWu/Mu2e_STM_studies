@@ -14,6 +14,17 @@ and each in three breakdowns:
 Normalization is in stm_analysis.py: each file is 1e12 POT, scaled to 9.3e12 (1-batch) or
 2.3e13 (2-batch) POT/s and divided by 1000 for kcps.
 
+Uncertainties
+-------------
+The rate points on the unsplit figure carry sqrt(N) * k, N being the raw simulated count and
+k the same normalization constant applied to the value. Sources add in quadrature. This is
+the statistical precision of the SIMULATION at its generated POT - it does not shrink as the
+beam gets brighter, and it is not the fluctuation of the real rate in a second of running.
+
+The energy quantities get no bars: a summed MeV is a sum of weights, whose Poisson error is
+sqrt(sum E^2) rather than sqrt(N). The split figures get none either - several curves' bars
+on one axes obscure the comparison the split exists to show.
+
 The non-ionizing plot is zero for some campaigns and not others - Geant4 fills that field
 only when a process sets it explicitly. The figure is drawn regardless; the startup line
 reports the sample's total so a flat zero is not mistaken for a measurement.
@@ -42,7 +53,12 @@ import stm_analysis as A
 from run_stm_scans import SCANS, DEFAULT_SCAN, get_scan, SOURCES
 
 
-# The y quantities: (key, axis label, how to pull it from one booked result).
+# The y quantities: (key, axis label, how to pull it from one booked result, is a count).
+#
+# The last field marks a quantity whose value is a NUMBER OF COUNTS, which is what makes
+# sqrt(N) its uncertainty. The energy quantities are sums of weights: their Poisson error is
+# sqrt(sum E^2), not sqrt(N), so they are drawn without error bars rather than with a wrong
+# one. See stm_analysis.count_error.
 #
 # nonIonE is populated in some runs and not others: it is only non-zero when a process calls
 # G4Step::SetNonIonizingEnergyDeposit(), which most EM and hadronic processes never do, so a
@@ -52,11 +68,11 @@ from run_stm_scans import SCANS, DEFAULT_SCAN, get_scan, SOURCES
 # non-ionizing total printed at startup before reading anything into one.
 QUANTITIES = [
     ('rate',   'Rate [kcps]',
-     lambda n, sums: n),
+     lambda n, sums: n, True),
     ('edep',   r'Energy rate [MeV$\cdot$kcps]',
-     lambda n, sums: sums['E']),
+     lambda n, sums: sums['E'], False),
     ('nonion', r'Non-ionizing rate [MeV$\cdot$kcps]',
-     lambda n, sums: sums['nonIonE']),
+     lambda n, sums: sums['nonIonE'], False),
 ]
 
 
@@ -106,16 +122,21 @@ def collect(frames, scan, xkey, detector, split, batches):
     return selections, totals
 
 
-def build_curves(scan, xkey, selections, totals, quantity_fn, batches, split):
-    """(label, color, marker, xs, ys) per curve, from the materialized totals.
+def build_curves(scan, xkey, selections, totals, quantity_fn, batches, split, is_count):
+    """(label, color, marker, fillstyle, xs, ys, yerrs) per curve, from the totals.
 
     Each source file is normalized to its own 1e12 POT and the rates are then added, so a
     point is the total rate the whole beam produces at that configuration.
+
+    yerrs is None unless this is a count quantity on an unsplit figure. Sources being
+    independent samples, their Poisson errors add IN QUADRATURE while their rates add
+    linearly - so the error on the summed point is sqrt(sum of each file's sqrt(N)*k
+    squared), not the sum of them.
     """
     curves = []
     for sel_key, sel_label, _ in selections:
         for batch in batches:
-            xs, ys = [], []
+            xs, ys, yerrs = [], [], []
             for point in scan.points_sorted_by(xkey):
                 key = (point.campaign, sel_key)
                 per_file = totals.get(key)
@@ -125,8 +146,14 @@ def build_curves(scan, xkey, selections, totals, quantity_fn, batches, split):
                         for n, sums in per_file)
                 xs.append(point.get(xkey))
                 ys.append(y)
+                if is_count:
+                    var = sum(A.count_error(n, batch, n_files=1) ** 2
+                              for n, _sums in per_file)
+                    yerrs.append(var ** 0.5)
             if not xs or not any(ys):
                 continue
+            if not is_count:
+                yerrs = None
 
             if split == 'none':
                 label = batch
@@ -139,7 +166,7 @@ def build_curves(scan, xkey, selections, totals, quantity_fn, batches, split):
                 color = A.pdg_color(sel_key)
             marker = 'o' if batch == batches[0] else 's'
             fillstyle = 'full' if batch == batches[0] else 'none'
-            curves.append((label, color, marker, fillstyle, xs, ys))
+            curves.append((label, color, marker, fillstyle, xs, ys, yerrs))
     return curves
 
 
@@ -154,15 +181,17 @@ def make_figure(curves, scan, xkey, ylabel, detector, outpath, categorical):
         # Strings have no numeric position; plot against an index and label the ticks.
         labels = [str(x) for x in curves[0][4]]
         positions = list(range(len(labels)))
-        for label, color, marker, fillstyle, xs, ys in curves:
-            ax.plot(positions[:len(ys)], ys, marker=marker, color=color,
-                    fillstyle=fillstyle, linestyle='none', label=label, markersize=8)
+        for label, color, marker, fillstyle, xs, ys, yerrs in curves:
+            ax.errorbar(positions[:len(ys)], ys, yerr=yerrs, marker=marker, color=color,
+                        fillstyle=fillstyle, linestyle='none', label=label, markersize=8,
+                        capsize=3, elinewidth=1.2)
         ax.set_xticks(positions)
         ax.set_xticklabels(labels, rotation=15)
     else:
-        for label, color, marker, fillstyle, xs, ys in curves:
-            ax.plot(xs, ys, marker=marker, color=color, fillstyle=fillstyle,
-                    linestyle='-', linewidth=1.5, label=label, markersize=7)
+        for label, color, marker, fillstyle, xs, ys, yerrs in curves:
+            ax.errorbar(xs, ys, yerr=yerrs, marker=marker, color=color, fillstyle=fillstyle,
+                        linestyle='-', linewidth=1.5, label=label, markersize=7,
+                        capsize=3, elinewidth=1.2)
 
     ax.set_xlabel(var.axis_label())
     ax.set_ylabel(ylabel)
@@ -249,9 +278,13 @@ def main():
     for detector, dname in A.DETECTORS:
         selections, totals = collect(
             frames, scan, xkey, detector, args.split, batches)
-        for qkey, ylabel, qfn in QUANTITIES:
+        for qkey, ylabel, qfn, is_count in QUANTITIES:
+            # Error bars only on the unsplit figures. A split puts many curves on one axes,
+            # where bars on each overlap into noise and hide the comparison the split is
+            # there to make.
+            show_err = is_count and args.split == 'none'
             curves = build_curves(scan, xkey, selections, totals,
-                                  qfn, batches, args.split)
+                                  qfn, batches, args.split, show_err)
             out = os.path.join(args.outdir, '%s_%s_%s%s.%s'
                                % (scan.name, qkey, dname, suffix, args.format))
             make_figure(curves, scan, xkey, ylabel, detector, out, categorical)

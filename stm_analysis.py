@@ -128,6 +128,22 @@ def to_kcps(value, batch, n_files=1, pot_per_file=POT_PER_FILE):
     return value / total_pot * BATCHES[batch] / 1000.0
 
 
+def count_error(n, batch, n_files=1, pot_per_file=POT_PER_FILE):
+    """Poisson uncertainty on a COUNT, in the same kcps units as to_kcps.
+
+    Simulated counts are Poisson in the generated POT, so n counts carry sqrt(n) before
+    normalization and sqrt(n) times the same constant factor after it.
+
+    This is the statistical precision of the SIMULATION at its generated POT. It does not
+    shrink because the beam is brighter, and it is not how much the real rate fluctuates in
+    a second of running.
+
+    Only meaningful for counts. A summed energy is a sum of weights, whose Poisson error is
+    sqrt(sum E^2), not sqrt(n) - the energy plots therefore carry no error bars.
+    """
+    return to_kcps(n ** 0.5, batch, n_files, pot_per_file)
+
+
 # ---------------------------------------------------------------------------
 # Loading
 # ---------------------------------------------------------------------------
