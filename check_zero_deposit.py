@@ -41,9 +41,11 @@ def main():
 
     scan = get_scan(args.scan)
     # No min_edep: the point is to see what a default run actually wrote.
+    # min_edep=None, not the default 0: that default exists to DROP the zero-energy rows,
+    # which are exactly what this script counts.
     frames = A.load_scan(scan, sources=args.sources, campaigns=args.campaigns,
                          output_root=args.output_root, directory=args.tree_dir,
-                         verbose=args.verbose)
+                         min_edep=None, verbose=args.verbose)
 
     # Book every count before reading any, so each file is traversed once.
     booked = {}

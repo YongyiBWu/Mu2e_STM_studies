@@ -133,14 +133,18 @@ def to_kcps(value, batch, n_files=1, pot_per_file=POT_PER_FILE):
 # ---------------------------------------------------------------------------
 
 def load_scan(scan, sources=None, campaigns=None, output_root=None,
-              min_edep=None, tree=COUNT_TREE, directory=TREE_DIR, verbose=False):
+              min_edep=0.0, tree=COUNT_TREE, directory=TREE_DIR, verbose=False):
     """{(source, campaign): RDataFrame} over a scan's produced files.
 
     Nothing is read here - RDataFrame is lazy, so this only opens the files and applies the
     min_edep filter to the graph. The event loops run when results are materialized.
 
-    min_edep cuts on TOTAL deposit (ionizing + non-ionizing), matching the module's own
-    MinEdep, so a cut applied here and one applied at production mean the same thing.
+    min_edep keeps rows with TOTAL deposit (ionizing + non-ionizing) STRICTLY ABOVE it, and
+    defaults to 0 so zero-energy rows are excluded. The module keeps those rows on purpose -
+    a cluster whose steps all deposited nothing is a real crossing with a valid time and
+    position - but they are not detector pulses, so counting them would inflate every rate.
+    Raise it (0.1, say) for a threshold of your own; pass None to keep everything, which is
+    what a study OF the zero rows wants.
 
     A file that does not exist is SKIPPED WITH A WARNING rather than treated as empty: an
     absent campaign and a campaign that genuinely produced no counts would otherwise plot
@@ -175,7 +179,9 @@ def load_scan(scan, sources=None, campaigns=None, output_root=None,
                 print('Opening ' + path)
             df = ROOT.RDataFrame(tree_path(tree, directory), path)
             if min_edep is not None:
-                df = df.Filter('E + nonIonE >= %r' % float(min_edep), 'MinEdep')
+                # Strictly greater, so the default of 0 drops the zero-energy rows rather
+                # than keeping them on the boundary.
+                df = df.Filter('E + nonIonE > %r' % float(min_edep), 'MinEdep')
             frames[(source, point.campaign)] = df
 
     if missing:
@@ -207,8 +213,10 @@ def load_genealogy(scan, sources=None, campaigns=None, output_root=None,
     full = tree_path(GENEALOGY_TREE, directory)
     frames = {}
     skipped = []
+    # min_edep=None: this call only enumerates which files exist, and the genealogy tree
+    # has no energy column to filter on anyway.
     for key in load_scan(scan, sources, campaigns, output_root,
-                         directory=directory, verbose=verbose):
+                         min_edep=None, directory=directory, verbose=verbose):
         source, campaign = key
         path = scan.output_path(source, campaign, output_root)
         f = ROOT.TFile.Open(path)

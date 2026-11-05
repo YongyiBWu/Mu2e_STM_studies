@@ -199,8 +199,12 @@ def main():
     ap.add_argument('--use-total-energy', action='store_true',
                     help='Use ionizing + non-ionizing instead of ionizing alone. No effect '
                          'in practice - nonIonE is structurally 0, see stm_analysis.')
-    ap.add_argument('--min-edep', type=float, default=None,
-                    help='Drop counts whose TOTAL deposit is below this [MeV].')
+    ap.add_argument('--min-edep', type=float, default=0.0,
+                    help='Keep only counts whose TOTAL (ionizing + non-ionizing) deposit '
+                         'is STRICTLY ABOVE this [MeV]. The default 0 drops the '
+                         'zero-energy rows, which are real crossings but not detector '
+                         'pulses and would inflate a rate. Raise it for a threshold of '
+                         'your own, e.g. 0.1.')
     ap.add_argument('--min-counts', type=int, default=10,
                     help='With --split pdg, omit species below this many counts (default '
                          '10) - a handful of counts is a line of noise.')

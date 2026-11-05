@@ -463,8 +463,12 @@ def main():
                          'hundred is unreadable.')
     ap.add_argument('--min-counts', type=int, default=10,
                     help='Omit species below this many counts (default 10).')
-    ap.add_argument('--min-edep', type=float, default=None,
-                    help='Drop counts whose TOTAL deposit is below this [MeV].')
+    ap.add_argument('--min-edep', type=float, default=0.0,
+                    help='Keep only counts whose TOTAL (ionizing + non-ionizing) deposit '
+                         'is STRICTLY ABOVE this [MeV]. The default 0 drops the '
+                         'zero-energy rows, which are real crossings but not detector '
+                         'pulses and would inflate a rate. Raise it for a threshold of '
+                         'your own, e.g. 0.1.')
     ap.add_argument('--no-zoom', action='store_true',
                     help='Keep the full Mu2e frame instead of zooming to the STM shield '
                          'house (SHIELD_HOUSE).')

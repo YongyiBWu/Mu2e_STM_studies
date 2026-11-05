@@ -193,8 +193,12 @@ def main():
                     help='Beam intensity to draw; repeatable. Default: both.')
     ap.add_argument('--sources', nargs='*', help='Restrict to these sources.')
     ap.add_argument('--campaigns', nargs='*', help='Restrict to these campaigns.')
-    ap.add_argument('--min-edep', type=float, default=None,
-                    help='Drop counts whose TOTAL deposit is below this [MeV].')
+    ap.add_argument('--min-edep', type=float, default=0.0,
+                    help='Keep only counts whose TOTAL (ionizing + non-ionizing) deposit '
+                         'is STRICTLY ABOVE this [MeV]. The default 0 drops the '
+                         'zero-energy rows, which are real crossings but not detector '
+                         'pulses and would inflate a rate. Raise it for a threshold of '
+                         'your own, e.g. 0.1.')
     ap.add_argument('--output-root', default=None, help='Where the ROOT files live.')
     ap.add_argument('--tree-dir', default=A.TREE_DIR,
                     help='TFileService directory holding the trees, i.e. the analyzer '
