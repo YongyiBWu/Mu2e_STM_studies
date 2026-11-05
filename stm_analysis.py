@@ -247,8 +247,11 @@ def minedep_suffix(min_edep):
     """
     if min_edep is None:
         return '_nominedep'          # zero-energy rows kept; a deliberate study, not a rate
-    if min_edep <= 0.0:
+    if min_edep == 0.0:
         return ''
+    # A NEGATIVE threshold is not the same as the default: the filter is "> min_edep", so
+    # anything below 0 keeps the zero-energy rows that 0 excludes. It therefore needs its
+    # own suffix, or the two runs overwrite each other despite plotting different data.
     return '_minedep' + ('%g' % min_edep).replace('.', 'p').replace('-', 'm')
 
 
