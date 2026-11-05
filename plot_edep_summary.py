@@ -226,6 +226,7 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
     suffix = '' if args.split == 'none' else '_by%s' % args.split
+    suffix += A.minedep_suffix(args.min_edep)
     print('scan %r, split = %s, campaigns = %s'
           % (scan.name, args.split, ', '.join(campaigns)))
 

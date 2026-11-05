@@ -500,6 +500,7 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
     campaigns = sorted({c for _s, c in frames})
     dtag = args.detector or 'both'
+    esuffix = A.minedep_suffix(args.min_edep)
     sources = args.sources or [s for s, _ in SOURCES]
 
     print('scan %r, mode = %s, campaigns = %s' % (scan.name, args.mode, ', '.join(campaigns)))
@@ -525,8 +526,9 @@ def main():
                 fig, ax_top, ax_side = new_figure(title, zoom=not args.no_zoom)
                 seen = draw_origins(counts, gindex, g, ax_top, ax_side)
                 legend_for(seen, ax_top)
-                out = os.path.join(args.outdir, '%s_%s_%s_%s_origins.%s'
-                                   % (scan.name, campaign, source, dtag, args.format))
+                out = os.path.join(args.outdir, '%s_%s_%s_%s_origins%s.%s'
+                                   % (scan.name, campaign, source, dtag, esuffix,
+                                      args.format))
                 fig.savefig(out, dpi=150, bbox_inches='tight')
                 plt.close(fig)
                 print('  wrote %s  (%d counts)' % (out, len(counts['run'])))
@@ -552,8 +554,9 @@ def main():
                     plt.close(fig)
                     continue
                 legend_for(seen, ax_top)
-                out = os.path.join(args.outdir, '%s_%s_%s_%s_pdg%d_tracks.%s'
-                                   % (scan.name, campaign, source, dtag, pdg, args.format))
+                out = os.path.join(args.outdir, '%s_%s_%s_%s_pdg%d_tracks%s.%s'
+                                   % (scan.name, campaign, source, dtag, pdg, esuffix,
+                                      args.format))
                 fig.savefig(out, dpi=150, bbox_inches='tight')
                 plt.close(fig)
                 note = ''

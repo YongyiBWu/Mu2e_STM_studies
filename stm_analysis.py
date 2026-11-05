@@ -237,6 +237,21 @@ def load_genealogy(scan, sources=None, campaigns=None, output_root=None,
     return frames
 
 
+def minedep_suffix(min_edep):
+    """'_minedep0p1' for a non-default threshold, '' for the default.
+
+    Goes in a figure's file name so a thresholded set does not overwrite the unthresholded
+    one - the threshold changes what is counted, so the two are different results. The
+    default (0, i.e. just the zero-energy rows removed) adds nothing, keeping the usual
+    names unchanged. The decimal point becomes 'p' because '.' separates fields here.
+    """
+    if min_edep is None:
+        return '_nominedep'          # zero-energy rows kept; a deliberate study, not a rate
+    if min_edep <= 0.0:
+        return ''
+    return '_minedep' + ('%g' % min_edep).replace('.', 'p').replace('-', 'm')
+
+
 # ---------------------------------------------------------------------------
 # Aggregation
 # ---------------------------------------------------------------------------
@@ -294,23 +309,21 @@ def species_present(frames, detector=None, min_counts=1):
 
 
 def non_ionizing_total(frames):
-    """Summed nonIonE across the frames - expected to be exactly 0.
+    """Summed nonIonE across the frames, reported so a zero is never silent.
 
     Geant4 fills G4Step::GetNonIonizingEnergyDeposit() only when a process calls
-    SetNonIonizingEnergyDeposit(), which no standard EM or hadronic process does. This was
-    checked against a real ShieldingM campaign: its high-precision neutron physics improves
-    cross sections and secondary production but performs no NIEL partitioning, and the field
-    came back zero exactly as under QGSP_BERT_EMZ. Every other consumer of it in Offline is
-    a pass-through, a dumper or a print; none interprets it.
-
-    So the plots carry no non-ionizing quantity. This helper exists to CHECK that assumption
-    rather than assume it: a non-zero result means something in the simulation changed and
-    the quantity has become worth plotting.
+    SetNonIonizingEnergyDeposit(), which many EM and hadronic processes never do - so some
+    campaigns carry the field and others return it identically zero. The non-ionizing plot
+    is drawn either way, which makes it easy to read a flat zero line as a measured result
+    rather than an absent one; printing the total here is what distinguishes them.
     """
     booked = [f.Sum('nonIonE') for f in frames.values()]
     total = sum(float(r.GetValue()) for r in booked)
-    if total != 0.0:
-        print('NOTE: non-ionizing energy sums to %g MeV, not 0. Something now populates '
-              'nonIonizingEDep - it may be worth plotting after all. See the comment on '
-              'QUANTITIES in plot_scan_rates.py.' % total, file=sys.stderr)
+    if total == 0.0:
+        print('NOTE: non-ionizing energy is identically 0 across this sample, so its plot '
+              'is a flat zero line - nothing in these runs populated nonIonizingEDep. That '
+              'is a property of the physics, not of the scan being plotted.',
+              file=sys.stderr)
+    else:
+        print('non-ionizing energy present: %g MeV summed over the sample' % total)
     return total

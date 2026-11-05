@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Requirements 1 and 2: rate and energy rate against a scanned variable.
 
-Two quantities per detector, each against the scan's x variable:
+Three quantities per detector, each against the scan's x variable:
     rate                 [kcps]
     ionizing energy rate [MeV*kcps]
+    non-ionizing rate    [MeV*kcps]
 
 and each in three breakdowns:
     --split none      one curve per beam intensity        (the reference figure)
@@ -13,8 +14,9 @@ and each in three breakdowns:
 Normalization is in stm_analysis.py: each file is 1e12 POT, scaled to 9.3e12 (1-batch) or
 2.3e13 (2-batch) POT/s and divided by 1000 for kcps.
 
-There is no non-ionizing plot: Geant4 never populates nonIonizingEDep in Mu2e, under any
-physics list (verified against a ShieldingM campaign). See QUANTITIES below.
+The non-ionizing plot is zero for some campaigns and not others - Geant4 fills that field
+only when a process sets it explicitly. The figure is drawn regardless; the startup line
+reports the sample's total so a flat zero is not mistaken for a measurement.
 
 What "species" means here: the pdgId branch is the ATTRIBUTED particle, i.e. the VD116 root
 under the default grouping. So a curve labelled gamma is energy CAUSED by a photon, not
@@ -42,21 +44,19 @@ from run_stm_scans import SCANS, DEFAULT_SCAN, get_scan, SOURCES
 
 # The y quantities: (key, axis label, how to pull it from one booked result).
 #
-# There is no non-ionizing quantity here, and that is not an omission. Geant4 only fills
-# G4Step::GetNonIonizingEnergyDeposit() when a process calls SetNonIonizingEnergyDeposit(),
-# which no standard EM or hadronic process does - including under ShieldingM, whose
-# high-precision neutron physics improves cross sections and secondaries but performs no
-# NIEL partitioning. This was checked against a real ShieldingM campaign, which returned
-# zero exactly as QGSP_BERT_EMZ did. Every other consumer of the field in Offline is a
-# pass-through, a dumper or a print; none interprets it.
-#
-# nonIonE is still written to the tree, so the day a process does populate it the plot is
-# one entry away.
+# nonIonE is populated in some runs and not others: it is only non-zero when a process calls
+# G4Step::SetNonIonizingEnergyDeposit(), which most EM and hadronic processes never do, so a
+# campaign can legitimately come back with the field identically zero. The plot is drawn
+# either way rather than being conditional - a flat zero line is itself the answer for that
+# campaign, and suppressing the figure would make the absence easy to miss. Check the
+# non-ionizing total printed at startup before reading anything into one.
 QUANTITIES = [
     ('rate',   'Rate [kcps]',
      lambda n, sums: n),
     ('edep',   r'Energy rate [MeV$\cdot$kcps]',
      lambda n, sums: sums['E']),
+    ('nonion', r'Non-ionizing rate [MeV$\cdot$kcps]',
+     lambda n, sums: sums['nonIonE']),
 ]
 
 
@@ -245,6 +245,7 @@ def main():
           % (scan.name, xkey, args.split, ', '.join(batches)))
 
     suffix = '' if args.split == 'none' else '_by%s' % args.split
+    suffix += A.minedep_suffix(args.min_edep)
     for detector, dname in A.DETECTORS:
         selections, totals = collect(
             frames, scan, xkey, detector, args.split, batches)
